@@ -4,173 +4,365 @@
 
 Verify that existing memory entries remain valid, trustworthy, and actionable over time.
 
-**This command performs checks only. It NEVER modifies memory or writes files.**
+**This command performs checks only. It NEVER modifies memory, writes files, or executes verify commands.**
 
 ---
 
-## Why memory verification is necessary
+## When to use
 
-Over time:
-
-- Files move or get deleted
-- Line numbers become outdated
-- Rules become obsolete
-- Decisions are superseded
-
-**Unverified memory is worse than no memory.**
+- Before major refactors (ensure constraints still apply)
+- Periodically (monthly hygiene check)
+- After incidents (verify related memories are current)
+- Before citing memory in decisions (trust but verify)
 
 ---
 
-## Scope (v1)
+## Input
 
-`/memory-verify` operates on one or more memory entries and reports issues.
+| Format | Description |
+|--------|-------------|
+| `/memory-verify` | Verify all entries in `.memory/events.jsonl` (default) |
+| `/memory-verify --id=<id>` | Verify single entry by ID |
 
-It does **not**:
+---
 
-- Auto-fix entries
-- Deprecate entries automatically
-- Rewrite sources
+## Output Modes
+
+| Flag | Behavior |
+|------|----------|
+| (default) | Summary table: `OK` / `WARN` / `FAIL` per entry |
+| `--full` | Expand each entry with check details + recommended actions |
 
 ---
 
 ## Verification Checks
 
-### 1. Source Integrity
+### 1. Schema Sanity
 
-For each source reference:
+Validates entry structure against `.memory/SCHEMA.md`:
 
-- File exists
-- Anchor (heading / function) still present
-- Line numbers (if provided) are within file bounds
-
-**Results:**
-
-- ✅ `OK`
-- ⚠️ `Anchor exists but line numbers outdated`
-- ❌ `Source missing or unresolvable`
-
----
-
-### 2. Executable Validity
-
-Checks that:
-
-- At least one of `rule` or `implication` exists
-- Rule still makes semantic sense given current codebase
-- `verify` command (if present) is syntactically plausible
-
-**Results:**
-
-- ✅ `Executable`
-- ⚠️ `Needs review`
-- ❌ `No longer actionable`
+| Check | Rule | Result |
+|-------|------|--------|
+| Required fields | `id`, `type`, `classification`, `title`, `content`, `source`, `created_at` must exist | FAIL if missing |
+| ID format | Pattern `^[a-z]+-[a-z0-9_]+-[a-f0-9]{8}$` | FAIL if malformed |
+| Type enum | `decision` \| `lesson` \| `constraint` \| `risk` \| `fact` | FAIL if invalid |
+| Classification enum | `hard` \| `soft` | FAIL if invalid |
+| Severity enum | `S1` \| `S2` \| `S3` \| `null` | WARN if invalid |
+| Executable constraint | `rule != null OR implication != null` | FAIL if both null |
+| Content length | 2-6 items in array | WARN if out of range |
+| Title length | ≤120 characters | WARN if exceeded |
 
 ---
 
-### 3. Staleness Check
+### 2. Source Resolvable
 
-Based on:
+For each source in `source[]`, verify the reference exists:
 
-- `last_verified` field
-- File modification timestamps (informational)
+| Source Type | Validation Steps | Files to Read |
+|-------------|------------------|---------------|
+| Markdown `path#anchor:L<s>-L<e>` | 1. File exists<br>2. Anchor heading exists<br>3. Line range valid | Read the target `.md` file |
+| Code `path:L<s>-L<e>` | 1. File exists<br>2. Line range within bounds | Check file existence + line count |
+| Function `path::func` | 1. File exists<br>2. Function definition exists | Read the target `.py` file |
+| Commit `commit <hash>` | Hash exists in git history | Run `git cat-file -t <hash>` |
+| PR `PR #<id>` | (Informational only, no validation) | — |
 
-**Heuristic only:**
+**Result levels:**
 
-- \>90 days without verification → mark `[Stale?]`
-- No automatic action taken
+| Status | Meaning |
+|--------|---------|
+| ✅ `OK` | Source fully resolvable |
+| ⚠️ `WARN` | Anchor exists but line numbers outdated (content drift) |
+| ❌ `FAIL` | Source missing, file deleted, or anchor not found |
+
+**Explicit requirement**: When validating source, MUST specify which file will be read. Example:
+```
+Checking source: docs/decisions/INCIDENTS.md#INC-036:L553-L761
+→ Will read: docs/decisions/INCIDENTS.md
+→ Looking for: heading "## INC-036" at or near lines 553-761
+```
 
 ---
 
-### 4. Supersession Check (informational)
+### 3. Verify Command — Static Safety Check
+
+If `verify` field is non-null, perform **static analysis only** (NEVER execute):
+
+| Check | Rule | Result |
+|-------|------|--------|
+| Syntax | Valid shell/Python command structure | WARN if malformed |
+| Read-only | No write operations (`>`, `>>`, `rm`, `mv`, `sed -i`) | FAIL if destructive |
+| Safe patterns | `grep`, `cat`, `find`, `python -c "...print..."` | OK |
+| Dangerous patterns | `curl`, `wget`, `pip install`, `eval`, `exec` | FAIL |
+| Path scope | References project-relative paths only | WARN if absolute paths outside project |
+
+**Guardrails**: The verify command is NEVER executed by `/memory-verify`. It is only analyzed for syntax and safety.
+
+---
+
+### 4. Staleness Check
+
+Calculate freshness based on timestamps:
+
+| Field | Calculation |
+|-------|-------------|
+| `last_verified` | Days since last human verification |
+| `created_at` | Days since creation (if never verified) |
+
+**Staleness thresholds:**
+
+| Days | Status | Meaning |
+|------|--------|---------|
+| ≤30 | ✅ Fresh | Recently verified or created |
+| 31-90 | ⚠️ Review | Consider re-verification |
+| >90 | ⚠️ Stale | Likely needs review before trusting |
+| Never verified | ⚠️ Unverified | `last_verified` is null |
+
+**Note**: Staleness is informational only. It does NOT trigger automatic deprecation.
+
+---
+
+### 5. Supersession Check (Informational)
 
 If `_meta.superseded_by` exists:
 
-- Verify referenced entry exists
-- Warn if chain is broken
+| Check | Rule |
+|-------|------|
+| Target exists | Referenced ID must exist in events.jsonl |
+| Deprecated flag | Entry should have `deprecated: true` |
+| Chain integrity | No circular references |
 
 ---
 
-## Output Format
-
-**Example:**
+## Summary Table Format (Default)
 
 ```
-/memory-verify lesson-inc036-e3f13b37
+/memory-verify
 
-Status: ⚠️ Needs Review
+========================================
+MEMORY VERIFICATION REPORT
+========================================
+Storage: .memory/events.jsonl
+Entries: 3
+Date: 2026-02-01
 
-Checks:
-- Source: OK (anchor found, line numbers valid)
-- Rule: OK
-- Verify: OK (command is syntactically valid)
-- Last verified: 2026-02-01 (90+ days ago) [Stale?]
+| ID                       | Schema | Source | Verify | Stale  | Status |
+|--------------------------|--------|--------|--------|--------|--------|
+| lesson-inc034-d1760930   | OK     | OK     | OK     | 90d ⚠️ | WARN   |
+| lesson-inc035-800ae2e3   | OK     | OK     | OK     | 90d ⚠️ | WARN   |
+| lesson-inc036-e3f13b37   | OK     | OK     | OK     | 90d ⚠️ | WARN   |
 
-Recommended action:
-- Re-verify rule still applies after feature refactor
-- Update last_verified timestamp if confirmed
-```
+========================================
+SUMMARY
+========================================
+✅ PASS: 0
+⚠️ WARN: 3
+❌ FAIL: 0
 
----
+All warnings are due to staleness (never verified).
 
-## Usage
-
-### Verify single entry
-
-```
-/memory-verify lesson-inc036-e3f13b37
-```
-
-### Verify all entries (summary)
-
-```
-/memory-verify --all
-```
-
-**Output:**
-
-```
-Memory Verification Summary
-
-Total entries: 3
-- ✅ OK: 2
-- ⚠️ Needs review: 1
-- ❌ Invalid: 0
-
-Entries needing attention:
-- lesson-inc034-d1760930: [Stale?] last_verified > 90 days
+No files were modified. This is a read-only report.
 ```
 
 ---
 
-## Guardrails
+## Full Mode Format (--full)
 
 ```
-- NEVER modify memory entries
-- NEVER auto-deprecate
-- NEVER guess missing information
-- ALWAYS report uncertainty explicitly
-- ALWAYS show source of each check result
+/memory-verify --id=lesson-inc036-e3f13b37 --full
+
+========================================
+SINGLE ENTRY VERIFICATION
+========================================
+ID: lesson-inc036-e3f13b37
+Title: Rolling statistics without shift(1) caused 999x backtest inflation
+
+---
+
+[1/4] SCHEMA SANITY
+Status: ✅ OK
+- id: valid format (lesson-inc036-e3f13b37)
+- type: lesson ✓
+- classification: hard ✓
+- severity: S1 ✓
+- title: 73 chars (≤120) ✓
+- content: 4 items (2-6 range) ✓
+- rule: present ✓
+- implication: present ✓
+- source: 1 reference ✓
+- created_at: 2026-02-01T16:00:00Z ✓
+
+---
+
+[2/4] SOURCE RESOLVABLE
+Source: docs/decisions/INCIDENTS.md#INC-036:L553-L761
+
+⚠️ Requires file read to verify.
+→ File to read: docs/decisions/INCIDENTS.md
+→ Looking for: anchor "## INC-036" near lines 553-761
+
+[Verification performed]
+- File exists: ✅ Yes
+- Anchor found: ✅ "## INC-036" found at line 554
+- Line range: ⚠️ Content extends to line 775 (declared L761)
+
+Status: ⚠️ WARN (line range drift detected, anchor valid)
+
+---
+
+[3/4] VERIFY COMMAND SAFETY
+Command: grep -rn '\.rolling\|\.ewm\|\.pct_change' src/features/*.py | grep -v 'shift(1)'
+
+Static analysis (NOT executed):
+- Pattern: grep with pipe ✓
+- Read-only: yes (no write operators) ✓
+- Scope: project-relative path (src/features/*.py) ✓
+- Dangerous patterns: none detected ✓
+
+Status: ✅ OK (safe read-only command)
+
+---
+
+[4/4] STALENESS CHECK
+created_at: 2026-02-01T16:00:00Z
+last_verified: null
+
+Days since creation: ~0 days
+Days since verification: NEVER
+
+Status: ⚠️ WARN (never verified)
+
+---
+
+========================================
+OVERALL STATUS: ⚠️ WARN
+========================================
+
+Issues found:
+1. Source line range slightly outdated (761 → 775)
+2. Entry has never been verified
+
+Recommended actions:
+1. Read docs/decisions/INCIDENTS.md#INC-036 to confirm line range
+2. Update source to L553-L775 if confirmed
+3. Set last_verified to current date after review
+
+No files were modified. Use /memory-save to update if needed.
 ```
 
 ---
 
-## Expected Workflow
+## Guardrails (Mandatory)
 
-1. Run `/memory-verify` periodically (or before major refactors)
-2. Review warnings
-3. Manually update entries via `/memory-save`
-4. Append updated versions to `events.jsonl`
+```
+┌────────────────────────────────────────────────────────────────────┐
+│ HARD CONSTRAINTS — VIOLATION = COMMAND FAILURE                     │
+├────────────────────────────────────────────────────────────────────┤
+│ 1. NEVER write to events.jsonl or any file                         │
+│ 2. NEVER execute the verify command (static analysis only)         │
+│ 3. NEVER auto-fix or auto-deprecate entries                        │
+│ 4. NEVER fabricate line numbers, anchors, or file contents         │
+│ 5. NEVER guess if a source exists — must explicitly check          │
+│ 6. ALWAYS state which file will be read before reading             │
+│ 7. ALWAYS report "No files were modified" at end of output         │
+│ 8. ALWAYS distinguish between "checked" and "assumed" results      │
+└────────────────────────────────────────────────────────────────────┘
+```
+
+**Note on example outputs**: In examples, ⚠️ may indicate "not checked yet" or "needs review". Always distinguish checked vs assumed.
 
 ---
 
-## Non-goals (v1)
+## Example Outputs
 
-- Automatic fixes
-- CI enforcement
-- Batch auto-verification
-- Confidence scoring
+### Example 1: Single Entry Verification
 
-These belong to later phases.
+```
+/memory-verify --id=lesson-inc036-e3f13b37
+
+========================================
+SINGLE ENTRY VERIFICATION
+========================================
+ID: lesson-inc036-e3f13b37
+Title: Rolling statistics without shift(1) caused 999x backtest inflation
+
+| Check    | Status | Details                                          |
+|----------|--------|--------------------------------------------------|
+| Schema   | ✅ OK  | All required fields present, types valid         |
+| Source   | ⚠️ WARN| Anchor valid; line range may have drifted        |
+| Verify   | ✅ OK  | grep command is safe (read-only, project-scoped) |
+| Staleness| ⚠️ WARN| Never verified (last_verified: null)             |
+
+OVERALL: ⚠️ WARN
+
+Files read during verification:
+- docs/decisions/INCIDENTS.md (source anchor check)
+
+Recommended actions:
+- Confirm line range L553-L761 is still accurate
+- Run verification and update last_verified
+
+No files were modified.
+```
+
+### Example 2: Full Verification (Summary Table)
+
+```
+/memory-verify
+
+========================================
+MEMORY VERIFICATION REPORT
+========================================
+Storage: .memory/events.jsonl
+Entries: 3
+Date: 2026-02-01
+
+| ID                       | Type   | Schema | Source | Verify | Stale  | Overall |
+|--------------------------|--------|--------|--------|--------|--------|---------|
+| lesson-inc034-d1760930   | lesson | ✅     | ⚠️     | ✅     | ⚠️     | ⚠️ WARN |
+| lesson-inc035-800ae2e3   | lesson | ✅     | ⚠️     | N/A    | ⚠️     | ⚠️ WARN |
+| lesson-inc036-e3f13b37   | lesson | ✅     | ⚠️     | ✅     | ⚠️     | ⚠️ WARN |
+
+Legend:
+- ✅ OK: Check passed
+- ⚠️ WARN: Issue detected, needs review
+- ❌ FAIL: Critical issue, entry may be invalid
+- N/A: Field not present (verify is optional)
+
+========================================
+SUMMARY
+========================================
+✅ PASS: 0
+⚠️ WARN: 3
+❌ FAIL: 0
+
+Common issues:
+- [3 entries] Never verified (last_verified: null)
+- [3 entries] Source line ranges need confirmation
+
+Files read during verification:
+- docs/decisions/INCIDENTS.md (all 3 sources reference this file)
+
+Recommended actions:
+1. Read INCIDENTS.md to confirm INC-034/035/036 line ranges
+2. Update source fields if line numbers have drifted
+3. Set last_verified after manual review
+
+========================================
+No files were modified. This is a read-only report.
+========================================
+```
+
+---
+
+## Limitations (v1.1)
+
+| Not Supported | Reason | Future |
+|---------------|--------|--------|
+| Auto-fix | Violates read-only guarantee | Never |
+| Execute verify commands | Security risk | Never |
+| CI integration | Requires persistent state | Phase 2 |
+| Batch line-number correction | Complex merge logic | Phase 2 |
+| Embedding validation | No vector store in v1 | Phase 2 |
 
 ---
 
@@ -179,3 +371,4 @@ These belong to later phases.
 | Version | Date | Notes |
 |---------|------|-------|
 | 1.0 | 2026-02-01 | Initial specification (read-only) |
+| 1.1 | 2026-02-01 | Schema sanity checks, verify safety analysis, explicit file read declaration, detailed examples |

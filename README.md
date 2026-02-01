@@ -44,12 +44,14 @@ This system solves that by enforcing:
 
 ### Commands (Claude CLI)
 
-| Command | Purpose |
-|---------|---------|
-| `/memory-save` | Create memory entries (manual, evidence-first) |
-| `/memory-search` | Query existing memory safely |
-| `/memory-import` | Extract memory candidates from documents (dry-run) |
-| `/memory-verify` | Verify memory integrity (read-only) |
+| Command | Version | Purpose |
+|---------|---------|---------|
+| `/memory-save` | v1.0 | Create memory entries (manual, evidence-first) |
+| `/memory-search` | v1.0 | Query existing memory safely |
+| `/memory-import` | v1.0 | Extract memory candidates from documents (dry-run) |
+| `/memory-verify` | **v1.1** | Verify memory integrity (read-only) |
+
+**Storage schema**: `SCHEMA v1.0` — append-only, git-tracked, no breaking changes planned for v1.x.
 
 ### Storage
 
