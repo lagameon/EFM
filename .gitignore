@@ -1,0 +1,22 @@
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Python
+__pycache__/
+*.py[cod]
+.env
+.venv/
+venv/
+
+# Memory archive (optional, user-specific)
+.memory/archive/
+
+# Logs
+*.log
