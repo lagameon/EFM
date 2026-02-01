@@ -1,0 +1,146 @@
+{
+  "version": "1.0",
+  "layer": 0,
+  "name": "core",
+  "description": "Universal verification rules. No project-specific paths. Uses ${paths.XXX} variables.",
+  "path_expansion_note": "Array paths (e.g., CODE_ROOTS) are expanded by iterating: for dir in ${paths.XXX}; do ... done",
+
+  "allowed_commands": {
+    "description": "Only these commands are allowed in verify fields (read-only)",
+    "allowlist": ["grep", "rg", "find", "wc", "head", "tail", "echo"],
+    "denylist": ["rm", "mv", "cp", "curl", "wget", "eval", "exec", "python", "node", "tee", "chmod", "chown", "git", "sed", "awk", ">", ">>"]
+  },
+
+  "rules": [
+    {
+      "id": "core-001",
+      "name": "schema-required-fields",
+      "type": "schema",
+      "description": "All required fields must be present",
+      "check": "required_fields_present",
+      "fields": ["id", "type", "classification", "title", "content", "source", "created_at"],
+      "severity": "FAIL"
+    },
+    {
+      "id": "core-002",
+      "name": "schema-id-format",
+      "type": "schema",
+      "description": "ID must match pattern: <type>-<anchor>-<hash8>",
+      "check": "regex_match",
+      "field": "id",
+      "pattern": "^[a-z]+-[a-z0-9_]+-[a-f0-9]{8}$",
+      "severity": "FAIL"
+    },
+    {
+      "id": "core-003",
+      "name": "schema-type-enum",
+      "type": "schema",
+      "description": "Type must be one of: decision, lesson, constraint, risk, fact",
+      "check": "enum",
+      "field": "type",
+      "values": ["decision", "lesson", "constraint", "risk", "fact"],
+      "severity": "FAIL"
+    },
+    {
+      "id": "core-004",
+      "name": "schema-classification-enum",
+      "type": "schema",
+      "description": "Classification must be: hard or soft",
+      "check": "enum",
+      "field": "classification",
+      "values": ["hard", "soft"],
+      "severity": "FAIL"
+    },
+    {
+      "id": "core-005",
+      "name": "schema-executable-constraint",
+      "type": "schema",
+      "description": "At least one of rule or implication must be present",
+      "check": "at_least_one_of",
+      "fields": ["rule", "implication"],
+      "severity": "FAIL"
+    },
+    {
+      "id": "core-006",
+      "name": "schema-content-length",
+      "type": "schema",
+      "description": "Content should have 2-6 items",
+      "check": "array_length",
+      "field": "content",
+      "min": 2,
+      "max": 6,
+      "severity": "WARN"
+    },
+    {
+      "id": "core-007",
+      "name": "schema-title-length",
+      "type": "schema",
+      "description": "Title should be <= 120 characters",
+      "check": "string_length",
+      "field": "title",
+      "max": 120,
+      "severity": "WARN"
+    },
+    {
+      "id": "core-008",
+      "name": "source-file-exists",
+      "type": "source",
+      "description": "Source file must exist",
+      "check": "file_exists",
+      "severity": "FAIL"
+    },
+    {
+      "id": "core-009",
+      "name": "source-anchor-resolvable",
+      "type": "source",
+      "description": "Source anchor (if present) should be resolvable",
+      "check": "anchor_exists",
+      "severity": "WARN"
+    },
+    {
+      "id": "core-010",
+      "name": "verify-is-command",
+      "type": "verify",
+      "description": "Verify field must be an executable command, not prose",
+      "check": "is_executable_command",
+      "severity": "WARN"
+    },
+    {
+      "id": "core-011",
+      "name": "verify-read-only",
+      "type": "verify",
+      "description": "Verify command must be read-only (no write operators)",
+      "check": "no_write_operators",
+      "deny_patterns": [">", ">>", "rm ", "mv ", "cp ", "tee ", "chmod ", "chown ", "git ", "sed ", "awk "],
+      "severity": "FAIL"
+    },
+    {
+      "id": "core-012",
+      "name": "verify-allowed-commands",
+      "type": "verify",
+      "description": "Verify command should use only allowed commands",
+      "check": "command_allowlist",
+      "allowed": "${verify.allowed_commands}",
+      "severity": "WARN",
+      "note": "Commands not in allowlist require human review"
+    },
+    {
+      "id": "core-013",
+      "name": "staleness-check",
+      "type": "staleness",
+      "description": "Entry should be verified within threshold",
+      "check": "days_since_verified",
+      "threshold": "${verify.staleness_threshold_days}",
+      "severity": "WARN"
+    },
+    {
+      "id": "core-014",
+      "name": "supersession-target-exists",
+      "type": "supersession",
+      "description": "If superseded_by is set, target must exist",
+      "check": "target_exists",
+      "field": "_meta.superseded_by",
+      "severity": "WARN"
+    }
+  ]
+}

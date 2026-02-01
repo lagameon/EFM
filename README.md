@@ -2,183 +2,287 @@
 
 > Evidence-first project memory for Claude Code CLI
 
-This repository provides a **safe, auditable memory system** for Claude Code that turns project incidents, constraints, and hard-earned lessons into reusable engineering knowledge.
+A **safe, auditable memory system** that turns project incidents, constraints, and hard-earned lessons into reusable engineering knowledge.
 
 **This is not chat history. This is project memory.**
 
 ---
 
-## Why this exists
+## Purpose
 
 Most teams lose critical knowledge over time:
-
 - Incidents are repeated
 - Constraints are forgotten
 - AI assistants confidently reintroduce old mistakes
 
 This system solves that by enforcing:
-
-- **Evidence-first memory** (every entry has a source)
-- **Executable rules** (what MUST / MUST NOT be done)
-- **Human-in-the-loop control**
-- **Zero silent side effects**
-
----
-
-## Core principles
-
-```
-❌ No automatic file writes
-❌ No silent prompt injection
-❌ No hallucinated "knowledge"
-
-✅ Explicit rules and implications
-✅ Append-only, auditable storage
-```
-
-**If something is written, a human explicitly approved it.**
+- **Evidence-first memory** — every entry has a verifiable source
+- **Executable rules** — what MUST / MUST NOT be done
+- **Human-in-the-loop control** — no silent writes
+- **Zero side effects by default**
 
 ---
 
-## What's included
-
-### Commands (Claude CLI)
-
-| Command | Version | Purpose |
-|---------|---------|---------|
-| `/memory-save` | v1.0 | Create memory entries (manual, evidence-first) |
-| `/memory-search` | v1.0 | Query existing memory safely |
-| `/memory-import` | v1.0 | Extract memory candidates from documents (dry-run) |
-| `/memory-verify` | **v1.1** | Verify memory integrity (read-only) |
-
-**Storage schema**: `SCHEMA v1.0` — append-only, git-tracked, no breaking changes planned for v1.x.
-
-### Storage
-
-All persistent memory lives in:
+## Security Boundaries
 
 ```
-.memory/events.jsonl
+This system will NEVER:
+  - Write files without explicit human request
+  - Execute verify commands (static analysis only)
+  - Dump all memory entries (max 5 per search)
+  - Auto-persist imported entries
+  - Modify existing entries (append-only)
+
+This system will ALWAYS:
+  - Require human approval for persistence
+  - Report "No files were modified" after read-only operations
+  - Distinguish between "checked" and "assumed" results
 ```
 
-- Append-only
-- Git-tracked
-- No silent mutation
-- Schema enforced by `.memory/SCHEMA.md`
-
-### Hard vs Soft Memory
-
-| Type | Meaning |
-|------|---------|
-| **Hard** | Violations invalidate results or cause incidents |
-| **Soft** | Contextual knowledge, not auto-enforced |
-
-Severity (S1–S3) describes impact, not enforcement.
+**Critical Security Guarantee**: The `/memory-verify` command performs **static analysis only** on verify fields. It checks whether the command *looks* safe (read-only patterns, no dangerous commands) but **NEVER actually executes** the verify command. This is a hard security boundary that cannot be overridden.
 
 ---
 
-## Quick start (5 minutes)
+## Command Workflow
 
-### 1. Copy into your project
+```
+┌─────────────────┐
+│ INCIDENTS.md    │  (your project documents)
+└────────┬────────┘
+         │
+         ▼
+┌─────────────────┐
+│ /memory-import  │  (extract candidates, DRY-RUN only)
+└────────┬────────┘
+         │
+         ▼
+┌─────────────────┐
+│ Human Review    │  (verify, edit, approve)
+└────────┬────────┘
+         │
+         ▼
+┌─────────────────┐
+│ /memory-save    │  (format entry, output only)
+└────────┬────────┘
+         │
+         ▼ (explicit append request)
+┌─────────────────┐
+│ events.jsonl    │  (append-only storage)
+└────────┬────────┘
+         │
+         ├──────────────────┐
+         ▼                  ▼
+┌─────────────────┐  ┌─────────────────┐
+│ /memory-search  │  │ /memory-verify  │
+│ (query memory)  │  │ (integrity check)│
+└─────────────────┘  └─────────────────┘
+```
+
+| Command | Purpose | Writes Files? |
+|---------|---------|---------------|
+| `/memory-import` | Extract candidates from documents | **Never** |
+| `/memory-save` | Format and display entry | **Never** |
+| `/memory-search` | Query existing memory | **Never** |
+| `/memory-verify` | Check integrity | **Never** |
+
+---
+
+## Quick Start (3 Steps)
+
+### Step 1: Copy to your project
 
 ```bash
-git clone https://github.com/anthropics/ef-memory-for-claude
-cp -r ef-memory-for-claude/.claude your-project/
-cp -r ef-memory-for-claude/.memory your-project/
+# Clone template
+git clone https://github.com/anthropics/ef-memory-for-claude.git
+cd ef-memory-for-claude
+
+# Copy to your project
+cp -r .memory /path/to/your-project/
+cp -r .claude /path/to/your-project/
 ```
 
 Or use this repo as a **GitHub Template**.
 
-### 2. Import historical incidents (dry-run)
+### Step 2: Configure paths
 
-```
-/memory-import docs/decisions/INCIDENTS.md
-```
+Edit `.memory/config.json`:
 
-- Review extracted MEMORY ENTRY blocks
-- Nothing is written
-
-### 3. Save approved memory
-
-Copy reviewed entries and run:
-
-```
-/memory-save
+```json
+{
+  "paths": {
+    "CODE_ROOTS": ["src/", "lib/"],
+    "DOCS_ROOT": "docs/",
+    "INCIDENTS_FILE": "docs/INCIDENTS.md"
+  }
+}
 ```
 
-Then explicitly append them to `.memory/events.jsonl`.
+### Step 3: Choose an archetype (optional)
 
-### 4. Query memory before changes
-
+```bash
+# For quant projects
+cp archetypes/quant/memory.config.patch.json .memory/
+# Then manually merge paths_override and rulesets into config.json
 ```
-/memory-search leakage
-```
-
-Claude will return high-confidence rules and lessons, with sources.
 
 ---
 
-## Directory structure
+## Archetype Selection
+
+| Archetype | Best For | Additional Checks |
+|-----------|----------|-------------------|
+| **quant** | Trading systems, backtesting | Leakage, shift, rolling, train-live sync |
+| **ml** | ML pipelines, model training | Data split, feature scaling, drift |
+| **web** | Web apps, API services | Validation, auth, injection |
+| *(none)* | General projects | Core schema + source checks only |
+
+---
+
+## Configuration
+
+### `.memory/config.json`
+
+```json
+{
+  "$schema": "./config.schema.json",
+  "version": "1.0",
+
+  "paths": {
+    "CODE_ROOTS": ["src/"],
+    "DOCS_ROOT": "docs/",
+    "INCIDENTS_FILE": "docs/INCIDENTS.md"
+  },
+
+  "verify": {
+    "rulesets": [".memory/rules/verify-core.rules.json"],
+    "fail_on_missing_path": false,
+    "staleness_threshold_days": 90
+  },
+
+  "search": {
+    "max_results": 5,
+    "priority": ["hard", "soft"],
+    "severity_order": ["S1", "S2", "S3"]
+  }
+}
+```
+
+### Path Variables
+
+Rules reference paths using `${paths.CODE_ROOTS}` syntax:
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `${paths.CODE_ROOTS}` | `["src/"]` | Main source directories |
+| `${paths.DOCS_ROOT}` | `"docs/"` | Documentation root |
+| `${paths.INCIDENTS_FILE}` | `"docs/INCIDENTS.md"` | Incident log location |
+
+---
+
+## Directory Structure
 
 ```
-.claude/
-└── commands/
-    ├── memory-save.md     # Write path (output only, no file writes)
-    ├── memory-search.md   # Read path (safe, bounded)
-    ├── memory-import.md   # Extract path (dry-run)
-    └── memory-verify.md   # Integrity check (read-only)
-
 .memory/
 ├── SCHEMA.md              # Storage contract (v1.0)
-└── events.jsonl           # Append-only memory store
+├── config.json            # Project configuration
+├── config.schema.json     # JSON Schema for config
+├── events.jsonl           # Memory storage (append-only)
+└── rules/
+    └── verify-core.rules.json   # Core verification rules
 
-examples/
-├── INCIDENTS.sample.md    # Sample incident document
-├── DECISIONS.sample.md    # Sample decision document
-└── walkthrough.md         # Step-by-step tutorial
+.claude/commands/
+├── memory-save.md         # Entry creation workflow
+├── memory-search.md       # Query workflow
+├── memory-import.md       # Import workflow (dry-run)
+└── memory-verify.md       # Integrity check workflow
 ```
 
 ---
 
-## What this system is NOT
+## FAQ
 
-- ❌ A note-taking tool
-- ❌ A vector-only embedding store
-- ❌ An autonomous AI memory
+### 1. Will this system write files automatically?
 
-**It is a project governance layer for AI-assisted development.**
+**No.** All four commands are read-only by default. File writes only happen when you explicitly request them (e.g., "append this to events.jsonl").
+
+### 2. What happens if I run `/memory-search --all`?
+
+It's forbidden. The system returns a maximum of 5 entries to prevent context overflow and accidental full dumps.
+
+### 3. Can `/memory-verify` execute the verify commands in my entries?
+
+**No.** Verify commands are analyzed statically for safety but never executed. The system only uses `grep`, `find`, and similar read-only tools to check patterns.
+
+### 4. What if my source file moves or changes?
+
+Run `/memory-verify` periodically. It will detect:
+- Missing files (FAIL)
+- Anchor drift (WARN)
+- Stale entries >90 days (WARN)
+
+Then manually update entries via `/memory-save` + append.
+
+### 5. How do I update an existing entry?
+
+Append a new version with the same `id`. The system uses append-only semantics — latest entry wins. Old versions remain for audit trail.
+
+### 6. What's the difference between Hard and Soft memory?
+
+| Type | Meaning | When to Use |
+|------|---------|-------------|
+| **Hard** | Violations invalidate results or cause incidents | Production bugs, data leakage, security issues |
+| **Soft** | Contextual knowledge, not strictly enforced | Best practices, preferences, non-critical patterns |
+
+### 7. Can I use this without Claude Code CLI?
+
+The memory format (JSONL + SCHEMA.md) is tool-agnostic. The `.claude/commands/` files are specific to Claude Code CLI but the principles apply anywhere.
 
 ---
 
-## Non-negotiable principles
+## Storage Format
 
-These are the soul of this system:
+All memory lives in `.memory/events.jsonl`:
 
-1. **Memory is project-level, not session-level**
-2. **No memory without evidence**
-3. **No persistence without human intent**
-4. **No silent enforcement**
-5. **Append-only > mutable truth**
+- **One JSON object per line** (strict JSONL)
+- **Append-only** — never modify existing lines
+- **Git-tracked** — full audit history
 
----
-
-## Who should use this
-
-- Teams using Claude Code seriously
-- Long-lived systems with real incidents
-- Projects where mistakes are expensive
-- Anyone who wants AI help without losing control
+See `.memory/SCHEMA.md` for field definitions.
 
 ---
 
-## License
+## Hard vs Soft Memory
 
-MIT
+| Classification | Meaning | Severity |
+|----------------|---------|----------|
+| **Hard** | Violations invalidate results or cause incidents | S1, S2 |
+| **Soft** | Contextual knowledge | S2, S3 |
+
+Severity scale:
+- **S1** — Invalidates all results / production incident
+- **S2** — Significant impact / degraded quality
+- **S3** — Minor issue / good to know
 
 ---
 
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
+See [CONTRIBUTING.md](CONTRIBUTING.md).
 
-**Key rule**: Any change that violates the non-negotiable principles will be rejected.
+**Key rule**: Any change that violates the security boundaries will be rejected.
+
+---
+
+## License
+
+MIT — see [LICENSE](LICENSE).
+
+---
+
+## Version
+
+| Component | Version |
+|-----------|---------|
+| Schema | 1.0 |
+| Config | 1.0 |
+| Commands | 1.1 |

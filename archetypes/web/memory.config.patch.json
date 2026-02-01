@@ -1,0 +1,27 @@
+{
+  "archetype": "web",
+  "description": "Web applications / API services",
+
+  "paths_override": {
+    "API_ROOTS": ["src/api/", "src/routes/", "api/", "routes/"],
+    "AUTH_ROOTS": ["src/auth/", "src/middleware/", "middleware/"],
+    "VALIDATOR_ROOTS": ["src/validators/", "src/schemas/", "validators/"]
+  },
+
+  "verify": {
+    "rulesets_append": [
+      "archetypes/web/rules/verify-web.rules.json"
+    ]
+  },
+
+  "tags_suggest": [
+    "validation",
+    "auth",
+    "injection",
+    "xss",
+    "csrf",
+    "error-handling",
+    "middleware",
+    "security"
+  ]
+}

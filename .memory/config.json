@@ -1,0 +1,33 @@
+{
+  "$schema": "./config.schema.json",
+  "version": "1.0",
+
+  "paths": {
+    "CODE_ROOTS": ["src/"],
+    "FEATURE_ROOTS": ["src/features/"],
+    "LABEL_ROOTS": ["src/labels/"],
+    "DEPLOYMENT_ROOTS": ["deployment/"],
+    "DOCS_ROOT": "docs/",
+    "INCIDENTS_FILE": "docs/INCIDENTS.md"
+  },
+
+  "verify": {
+    "rulesets": [
+      ".memory/rules/verify-core.rules.json"
+    ],
+    "fail_on_missing_path": false,
+    "staleness_threshold_days": 90,
+    "allowed_commands": ["grep", "rg", "find", "wc", "head", "tail", "echo"]
+  },
+
+  "search": {
+    "max_results": 5,
+    "priority": ["hard", "soft"],
+    "severity_order": ["S1", "S2", "S3"]
+  },
+
+  "import": {
+    "supported_sources": ["INCIDENTS.md"],
+    "require_line_numbers": false
+  }
+}

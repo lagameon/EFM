@@ -1,0 +1,26 @@
+{
+  "archetype": "ml",
+  "description": "Machine learning / model training systems",
+
+  "paths_override": {
+    "MODEL_ROOTS": ["models/", "src/models/"],
+    "DATA_ROOTS": ["data/", "datasets/"],
+    "PIPELINE_ROOTS": ["src/pipelines/", "src/training/", "pipelines/"],
+    "FEATURE_ROOTS": ["src/features/", "features/"]
+  },
+
+  "verify": {
+    "rulesets_append": [
+      "archetypes/ml/rules/verify-ml.rules.json"
+    ]
+  },
+
+  "tags_suggest": [
+    "data-leakage",
+    "train-val-split",
+    "feature-scaling",
+    "model-drift",
+    "pipeline",
+    "preprocessing"
+  ]
+}

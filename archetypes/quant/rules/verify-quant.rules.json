@@ -1,0 +1,36 @@
+{
+  "version": "1.0",
+  "layer": 1,
+  "name": "quant",
+  "description": "Quantitative trading verification rules. Checks for data leakage and train-live consistency.",
+
+  "rules": [
+    {
+      "id": "quant-001",
+      "name": "leakage-shift-check",
+      "type": "static-grep",
+      "description": "rolling/ewm/pct_change should be preceded by shift(1) to avoid current-bar leakage",
+      "command_template": "echo '[leakage] Checking rolling/ewm without shift(1) in ${paths.FEATURE_ROOTS}'; for dir in ${paths.FEATURE_ROOTS}; do if [ -d \"$dir\" ]; then grep -RInE '\\.(rolling|ewm|pct_change)\\(' \"$dir\" 2>/dev/null | grep -vE 'shift\\(1\\)' | head -n 40; fi; done; echo 'Done. Lines without shift(1) may indicate leakage.'",
+      "severity": "WARN",
+      "note": "Static heuristic. May have false positives if shift happens on a different line."
+    },
+    {
+      "id": "quant-002",
+      "name": "label-shift-negative",
+      "type": "static-grep",
+      "description": "shift(-N) in labels may indicate future data usage (expected for label generation, but verify context)",
+      "command_template": "echo '[label] Checking shift(-N) usage in ${paths.LABEL_ROOTS}'; for dir in ${paths.LABEL_ROOTS}; do if [ -d \"$dir\" ]; then grep -RInE 'shift\\(-[0-9]+' \"$dir\" 2>/dev/null | head -n 40; fi; done; echo 'Done. shift(-N) is expected for labels but verify usage.'",
+      "severity": "WARN",
+      "note": "shift(-N) is normal for label creation. This rule flags for awareness, not rejection."
+    },
+    {
+      "id": "quant-003",
+      "name": "train-live-feature-sync",
+      "type": "static-grep",
+      "description": "Feature definitions should exist in both training and deployment paths",
+      "command_template": "echo '[train-live sync] Checking feature definitions'; echo '--- Training (${paths.FEATURE_ROOTS}) ---'; for dir in ${paths.FEATURE_ROOTS}; do if [ -d \"$dir\" ]; then grep -RIh 'def calc' \"$dir\" 2>/dev/null | head -n 20; fi; done; echo '--- Deployment (${paths.DEPLOYMENT_ROOTS}) ---'; for dir in ${paths.DEPLOYMENT_ROOTS}; do if [ -d \"$dir\" ]; then grep -RIh 'def calc' \"$dir\" 2>/dev/null | head -n 20; fi; done; echo 'Done. Compare outputs to verify sync.'",
+      "severity": "WARN",
+      "note": "Manual comparison required. This outputs both sides for review."
+    }
+  ]
+}

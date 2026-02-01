@@ -1,28 +1,76 @@
 # EF Memory Walkthrough
 
-This guide walks you through the complete workflow:
-**Import → Review → Save → Search**
-
-Time: ~10 minutes
+Complete workflow demonstration:
+**Import (dry-run) → Human Review → Save → Generate JSONL → Append → Verify**
 
 ---
 
 ## Prerequisites
 
 - Claude Code CLI installed
-- This repository cloned or copied to your project
+- EF Memory template copied to your project
 
 ---
 
-## Step 1: Import from INCIDENTS.sample.md
+## Quick Start (Copy & Run)
+
+```bash
+# 1. Copy template to your project
+cp -r /path/to/EF-Memory-for-Claude/.memory /your/project/
+cp -r /path/to/EF-Memory-for-Claude/.claude /your/project/
+
+# 2. Edit config (set your paths)
+# Edit .memory/config.json:
+#   "CODE_ROOTS": ["src/", "lib/"],
+#   "DOCS_ROOT": "docs/",
+#   "INCIDENTS_FILE": "docs/INCIDENTS.md"
+
+# 3. Verify setup (in Claude Code)
+/memory-verify
+```
+
+Expected first-run output (empty memory):
+```
+MEMORY VERIFICATION REPORT
+Storage: .memory/events.jsonl
+Entries: 0
+
+No entries to verify.
+No files were modified.
+```
+
+---
+
+## Archetype Selection (Optional)
+
+If your project matches an archetype, merge its rules:
+
+```bash
+# Example: quant archetype
+cat archetypes/quant/memory.config.patch.json
+```
+
+**Merge instructions** (do NOT replace entire config):
+1. Copy `paths_override` values into your `.memory/config.json` `paths` section
+2. Append archetype ruleset to `verify.rulesets` array:
+   ```json
+   "rulesets": [
+     ".memory/rules/verify-core.rules.json",
+     "archetypes/quant/rules/verify-quant.rules.json"
+   ]
+   ```
+
+---
+
+## Step 1: Import from INCIDENTS.md (Dry-Run)
 
 Run the import command:
 
 ```
-/memory-import examples/INCIDENTS.sample.md
+/memory-import docs/INCIDENTS.md#INC-001
 ```
 
-Claude will scan the document and output MEMORY ENTRY candidates:
+Claude extracts MEMORY ENTRY candidates:
 
 ```
 ========================================
@@ -40,144 +88,221 @@ Content:
 - Downstream systems produced incorrect results for 3 days
 Rule: All external inputs MUST be validated before processing
 Implication: Data corruption propagates silently; recovery requires full reprocessing
-Verify: Check all API endpoints have input validation middleware
+Verify: grep -rn 'validate' src/ | head -20 || echo 'WARN: no validation found'
 Source:
-- examples/INCIDENTS.sample.md#INC-001
+- docs/INCIDENTS.md#INC-001
 Tags: validation, data-quality
 
 ---
 
-[... more candidates ...]
-
 ========================================
 IMPORT SUMMARY
 ========================================
-Candidates extracted: 3
+Candidates extracted: 1
   - Hard/S1: 1
-  - Hard/S2: 2
 
 ⚠️ REVIEW REQUIRED
 No files have been modified.
 ```
 
-**Key point**: Nothing is written. This is a dry-run.
+**Key point**: `/memory-import` NEVER writes files. This is a dry-run.
 
 ---
 
-## Step 2: Review the candidates
+## Step 2: Human Review
 
 For each candidate, verify:
 
-- [ ] Title accurately summarizes the lesson
+- [ ] Title accurately summarizes the lesson (not just the incident)
 - [ ] Rule is actionable (MUST/NEVER/ALWAYS)
-- [ ] Implication explains real consequence
-- [ ] Source is correct
-- [ ] Content is concrete (no fluff)
+- [ ] Verify field is an executable command (not prose)
+- [ ] Source points to correct location
+- [ ] Content has 2-6 concrete points
 
-Edit if needed by copying and modifying the entry.
+Edit if needed by modifying the entry in your response.
 
 ---
 
-## Step 3: Save approved entries
+## Step 3: Save Entry Format
 
-For entries you approve, use `/memory-save` to confirm format:
+Run `/memory-save` to confirm the entry format:
 
 ```
 /memory-save
 ```
 
-Then provide the entry content. Claude will display it in the standard format.
+Provide the reviewed entry. Claude displays it in standard format.
 
-**To persist**: Explicitly request the write:
-
-```
-Please append this entry to .memory/events.jsonl
-```
-
-Claude will write the entry (with your permission).
+**Note**: `/memory-save` also NEVER writes files. It only formats for confirmation.
 
 ---
 
-## Step 4: Search your memory
+## Step 4: Generate Single-Line JSONL
 
-Now that you have entries, search them:
+Use Python to create a valid single-line JSON:
 
-```
-/memory-search validation
-```
-
-Output:
-
-```
-/memory-search validation
-
-Found 1 entry:
-
-[Hard] [S1] lesson
-Title: Missing validation caused data corruption
-Rule: All external inputs MUST be validated before processing
-Implication: Data corruption propagates silently; recovery requires full reprocessing
-Source: examples/INCIDENTS.sample.md#INC-001
----
-
-Tips:
-- Use `--full` to see Content and Verify fields
-```
-
----
-
-## Step 5: Verify memory integrity (optional)
-
-Periodically check that your memory is still valid:
-
-```
-/memory-verify lesson-sample-a1b2c3d4
+```bash
+cat << 'EOF' | python3 -c 'import json,sys; print(json.dumps(json.load(sys.stdin), ensure_ascii=False))'
+{
+  "id": "lesson-inc001-a1b2c3d4",
+  "type": "lesson",
+  "classification": "hard",
+  "severity": "S1",
+  "title": "Missing validation caused data corruption",
+  "content": [
+    "Input validation was skipped for performance reasons",
+    "Malformed data propagated through the pipeline",
+    "Downstream systems produced incorrect results for 3 days"
+  ],
+  "rule": "All external inputs MUST be validated before processing",
+  "implication": "Data corruption propagates silently; recovery requires full reprocessing",
+  "verify": "grep -rn 'validate' src/ | head -20 || echo 'WARN: no validation found'",
+  "source": ["docs/INCIDENTS.md#INC-001"],
+  "tags": ["validation", "data-quality"],
+  "created_at": "2026-01-15T10:00:00Z",
+  "last_verified": "2026-01-15T10:00:00Z",
+  "deprecated": false,
+  "_meta": {"import_source": "memory-import v1.0"}
+}
+EOF
 ```
 
-Output:
-
-```
-Status: ✅ OK
-
-Checks:
-- Source: OK (file exists, anchor valid)
-- Rule: OK
-- Verify: OK
-- Last verified: 2026-01-01 (30 days ago)
+Output (single line):
+```json
+{"id":"lesson-inc001-a1b2c3d4","type":"lesson","classification":"hard","severity":"S1","title":"Missing validation caused data corruption","content":["Input validation was skipped for performance reasons","Malformed data propagated through the pipeline","Downstream systems produced incorrect results for 3 days"],"rule":"All external inputs MUST be validated before processing","implication":"Data corruption propagates silently; recovery requires full reprocessing","verify":"grep -rn 'validate' src/ | head -20 || echo 'WARN: no validation found'","source":["docs/INCIDENTS.md#INC-001"],"tags":["validation","data-quality"],"created_at":"2026-01-15T10:00:00Z","last_verified":"2026-01-15T10:00:00Z","deprecated":false,"_meta":{"import_source":"memory-import v1.0"}}
 ```
 
 ---
 
-## Complete workflow summary
+## Step 5: Append to events.jsonl
+
+Append the single-line JSON:
+
+```bash
+echo '{"id":"lesson-inc001-a1b2c3d4",...}' >> .memory/events.jsonl
+```
+
+Or use heredoc for safety:
+
+```bash
+cat >> .memory/events.jsonl << 'JSONL'
+{"id":"lesson-inc001-a1b2c3d4","type":"lesson",...}
+JSONL
+```
+
+---
+
+## Step 6: Validate JSONL Format
+
+```bash
+python3 -c "
+import json
+with open('.memory/events.jsonl', 'r') as f:
+    for i, line in enumerate(f, 1):
+        line = line.strip()
+        if line:
+            try:
+                json.loads(line)
+                print(f'Line {i}: OK')
+            except json.JSONDecodeError as e:
+                print(f'Line {i}: FAIL - {e}')
+"
+```
+
+---
+
+## Step 7: Verify Memory Integrity
+
+Run `/memory-verify` to check all entries:
+
+```
+/memory-verify
+```
+
+Expected output:
+
+```
+========================================
+MEMORY VERIFICATION REPORT
+========================================
+Storage: .memory/events.jsonl
+Entries: 1
+
+| ID                       | Schema | Source | Verify | Stale  | Overall |
+|--------------------------|--------|--------|--------|--------|---------|
+| lesson-inc001-a1b2c3d4   | ✅     | ✅     | ✅     | ✅     | PASS    |
+
+========================================
+SUMMARY
+========================================
+✅ PASS: 1
+⚠️ WARN: 0
+❌ FAIL: 0
+
+No files were modified. This is a read-only report.
+========================================
+```
+
+### Understanding Verification Results
+
+| Status | Meaning | Action Required |
+|--------|---------|-----------------|
+| ✅ PASS | All checks passed | None |
+| ⚠️ WARN | Non-critical issue | Review recommended |
+| ❌ FAIL | Critical issue | Must fix before trusting |
+
+**Common WARN scenarios:**
+- `Stale: 90d ⚠️` — Entry not verified in >90 days
+- `Source: ⚠️` — Line numbers may have drifted (anchor still valid)
+- `Verify: N/A` — No verify command defined (optional field)
+
+**Common FAIL scenarios:**
+- `Schema: ❌` — Missing required field (id, type, source, etc.)
+- `Source: ❌` — Source file deleted or anchor not found
+- `Verify: ❌` — Verify command uses dangerous patterns (rm, >, etc.)
+
+---
+
+## Complete Workflow Summary
 
 ```
 ┌─────────────────┐
-│ INCIDENTS.md    │  (your project documents)
+│ INCIDENTS.md    │
 └────────┬────────┘
          │
          ▼
 ┌─────────────────┐
-│ /memory-import  │  (extract candidates, dry-run)
+│ /memory-import  │ → Dry-run, extracts candidates
 └────────┬────────┘
          │
          ▼
 ┌─────────────────┐
-│ Human Review    │  (verify, edit, approve)
+│ Human Review    │ → Verify title, rule, verify field
 └────────┬────────┘
          │
          ▼
 ┌─────────────────┐
-│ /memory-save    │  (format and persist)
+│ /memory-save    │ → Format confirmation (no write)
 └────────┬────────┘
          │
          ▼
 ┌─────────────────┐
-│ events.jsonl    │  (append-only storage)
+│ Python JSON     │ → Generate single-line JSONL
 └────────┬────────┘
          │
          ▼
 ┌─────────────────┐
-│ /memory-search  │  (query when needed)
+│ echo >> append  │ → Explicit file write
+└────────┬────────┘
+         │
+         ▼
+┌─────────────────┐
+│ Validate JSONL  │ → Ensure format is correct
+└────────┬────────┘
+         │
+         ▼
+┌─────────────────┐
+│ /memory-verify  │ → Read-only integrity check
 └─────────────────┘
 ```
 
@@ -189,11 +314,4 @@ Checks:
 2. **Review carefully**: Quality > quantity
 3. **Use before changes**: Run `/memory-search` before modifying critical code
 4. **Verify periodically**: Run `/memory-verify` monthly or before refactors
-
----
-
-## What's next?
-
-- Import your real `INCIDENTS.md` or `DECISIONS.md`
-- Add project-specific constraints
-- Integrate into your development workflow
+5. **Always single-line**: JSONL requires one JSON object per line

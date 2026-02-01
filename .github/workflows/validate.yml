@@ -1,0 +1,88 @@
+name: Validate Template
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Validate JSON files
+        run: |
+          echo "Validating .memory/config.json..."
+          python -m json.tool .memory/config.json > /dev/null
+
+          echo "Validating .memory/config.schema.json..."
+          python -m json.tool .memory/config.schema.json > /dev/null
+
+          echo "Validating .memory/rules/verify-core.rules.json..."
+          python -m json.tool .memory/rules/verify-core.rules.json > /dev/null
+
+          echo "Validating archetype rulesets..."
+          for f in archetypes/*/rules/*.json; do
+            echo "  Validating $f..."
+            python -m json.tool "$f" > /dev/null
+          done
+
+          echo "All JSON files are valid."
+
+      - name: Validate sample JSONL
+        run: |
+          echo "Validating examples/events.sample.jsonl..."
+          python3 << 'EOF'
+          import json
+          import sys
+
+          with open('examples/events.sample.jsonl', 'r') as f:
+              for i, line in enumerate(f, 1):
+                  line = line.strip()
+                  if not line:
+                      continue
+                  try:
+                      json.loads(line)
+                  except json.JSONDecodeError as e:
+                      print(f"Line {i}: FAIL - {e}")
+                      sys.exit(1)
+          print("All JSONL lines are valid.")
+          EOF
+
+      - name: Check for bash-only syntax in rules
+        run: |
+          echo "Scanning for bash-only syntax..."
+          # These patterns should NOT appear in command templates
+          if grep -RInE '<\(|\[\[|pipefail' --include="*.json" . 2>/dev/null | grep -v '.git'; then
+            echo "WARNING: Found potential bash-only syntax in JSON files"
+            exit 1
+          fi
+          echo "No bash-only syntax found."
+
+      - name: Validate config against schema
+        run: |
+          pip install jsonschema
+          python3 << 'EOF'
+          import json
+          from jsonschema import validate, ValidationError
+
+          with open('.memory/config.json') as f:
+              config = json.load(f)
+
+          with open('.memory/config.schema.json') as f:
+              schema = json.load(f)
+
+          try:
+              validate(instance=config, schema=schema)
+              print("Config validates against schema.")
+          except ValidationError as e:
+              print(f"Schema validation failed: {e.message}")
+              exit(1)
+          EOF

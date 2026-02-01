@@ -1,0 +1,33 @@
+{
+  "version": "1.0",
+  "layer": 1,
+  "name": "web",
+  "description": "Web application verification rules. Checks for security and validation patterns.",
+
+  "rules": [
+    {
+      "id": "web-001",
+      "name": "input-validation-present",
+      "type": "static-grep",
+      "description": "API endpoints should have input validation",
+      "command_template": "echo '[validation] Checking for validation patterns in ${paths.API_ROOTS}'; for dir in ${paths.API_ROOTS}; do if [ -d \"$dir\" ]; then grep -RInE 'validate|sanitize|zod|yup|joi|ajv|express-validator' \"$dir\" 2>/dev/null | head -n 30; fi; done; echo 'Done. If no validation found, review input handling.'",
+      "severity": "WARN"
+    },
+    {
+      "id": "web-002",
+      "name": "auth-middleware-present",
+      "type": "static-grep",
+      "description": "Protected routes should use authentication middleware",
+      "command_template": "echo '[auth] Checking for auth patterns in ${paths.AUTH_ROOTS}'; for dir in ${paths.AUTH_ROOTS}; do if [ -d \"$dir\" ]; then grep -RInE 'authenticate|requireAuth|isAuthenticated|passport|jwt|bearer' \"$dir\" 2>/dev/null | head -n 30; fi; done; echo 'Done. Verify protected routes use auth.'",
+      "severity": "WARN"
+    },
+    {
+      "id": "web-003",
+      "name": "error-handling-safe",
+      "type": "static-grep",
+      "description": "Error responses should not leak internal details",
+      "command_template": "echo '[error] Checking error handling in ${paths.API_ROOTS}'; for dir in ${paths.API_ROOTS}; do if [ -d \"$dir\" ]; then grep -RInE 'catch|error|exception' \"$dir\" 2>/dev/null | grep -vE 'log|logger' | head -n 30; fi; done; echo 'Done. Verify error responses are sanitized.'",
+      "severity": "WARN"
+    }
+  ]
+}

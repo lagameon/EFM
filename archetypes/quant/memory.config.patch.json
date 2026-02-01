@@ -1,0 +1,28 @@
+{
+  "archetype": "quant",
+  "description": "Quantitative trading / backtesting systems",
+
+  "paths_override": {
+    "FEATURE_ROOTS": ["src/features/", "src/signals/"],
+    "LABEL_ROOTS": ["src/labels/"],
+    "BACKTEST_ROOTS": ["backtest/", "src/backtesting/"],
+    "DEPLOYMENT_ROOTS": ["deployment/", "deploy/"]
+  },
+
+  "verify": {
+    "rulesets_append": [
+      "archetypes/quant/rules/verify-quant.rules.json"
+    ]
+  },
+
+  "tags_suggest": [
+    "leakage",
+    "backtest",
+    "walk-forward",
+    "feature-engine",
+    "label",
+    "shift",
+    "rolling",
+    "train-live-sync"
+  ]
+}

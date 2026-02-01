@@ -1,0 +1,121 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/anthropics/ef-memory-for-claude/config.schema.json",
+  "title": "EF Memory Configuration",
+  "description": "Configuration schema for EF Memory for Claude",
+  "type": "object",
+  "required": ["version", "paths", "verify", "search"],
+  "properties": {
+    "$schema": {
+      "type": "string",
+      "description": "JSON Schema reference"
+    },
+    "version": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+$",
+      "description": "Configuration version"
+    },
+    "paths": {
+      "type": "object",
+      "description": "Project path mappings",
+      "properties": {
+        "CODE_ROOTS": {
+          "type": "array",
+          "items": {"type": "string"},
+          "description": "Main source code directories"
+        },
+        "FEATURE_ROOTS": {
+          "type": "array",
+          "items": {"type": "string"},
+          "description": "Feature engineering directories"
+        },
+        "LABEL_ROOTS": {
+          "type": "array",
+          "items": {"type": "string"},
+          "description": "Label generation directories"
+        },
+        "DEPLOYMENT_ROOTS": {
+          "type": "array",
+          "items": {"type": "string"},
+          "description": "Deployment/production directories"
+        },
+        "DOCS_ROOT": {
+          "type": "string",
+          "description": "Documentation root directory"
+        },
+        "INCIDENTS_FILE": {
+          "type": "string",
+          "description": "Path to incidents log file"
+        }
+      },
+      "additionalProperties": {
+        "oneOf": [
+          {"type": "string"},
+          {"type": "array", "items": {"type": "string"}}
+        ]
+      }
+    },
+    "verify": {
+      "type": "object",
+      "required": ["rulesets"],
+      "properties": {
+        "rulesets": {
+          "type": "array",
+          "items": {"type": "string"},
+          "description": "List of ruleset file paths to load"
+        },
+        "fail_on_missing_path": {
+          "type": "boolean",
+          "default": false,
+          "description": "Whether to FAIL or WARN when paths are missing"
+        },
+        "staleness_threshold_days": {
+          "type": "integer",
+          "default": 90,
+          "description": "Days before an entry is considered stale"
+        },
+        "allowed_commands": {
+          "type": "array",
+          "items": {"type": "string"},
+          "description": "Commands allowed in verify field (read-only only)"
+        }
+      }
+    },
+    "search": {
+      "type": "object",
+      "properties": {
+        "max_results": {
+          "type": "integer",
+          "default": 5,
+          "maximum": 10,
+          "description": "Maximum entries to return per search"
+        },
+        "priority": {
+          "type": "array",
+          "items": {"type": "string", "enum": ["hard", "soft"]},
+          "description": "Priority order for classification"
+        },
+        "severity_order": {
+          "type": "array",
+          "items": {"type": "string", "enum": ["S1", "S2", "S3"]},
+          "description": "Priority order for severity"
+        }
+      }
+    },
+    "import": {
+      "type": "object",
+      "properties": {
+        "supported_sources": {
+          "type": "array",
+          "items": {"type": "string"},
+          "description": "Supported source document types"
+        },
+        "require_line_numbers": {
+          "type": "boolean",
+          "default": false,
+          "description": "Whether to require line numbers in sources"
+        }
+      }
+    }
+  }
+}
