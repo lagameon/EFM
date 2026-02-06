@@ -1,10 +1,28 @@
 # EF Memory for Claude
 
-> Evidence-first project memory for Claude Code CLI
+> Evidence-first project memory skills for Claude Code — [OpenClaw](https://github.com/pinkpixel-dev/OpenClaw)/moltbot-style structured memory with multi-layer retrieval, auto-verification, and lifecycle management.
 
-A **safe, auditable memory system** that turns project incidents, constraints, and hard-earned lessons into reusable engineering knowledge — with multi-layer retrieval, automated verification, and memory lifecycle management.
+A **safe, auditable memory skill system** that turns project incidents, constraints, and hard-earned lessons into reusable engineering knowledge. Inspired by the workspace memory architecture of [OpenClaw](https://github.com/pinkpixel-dev/OpenClaw) (moltbot) — but built specifically for Claude Code's skill system with evidence-first guarantees.
 
 **This is not chat history. This is project memory.**
+
+---
+
+## Inspired By: OpenClaw / moltbot Memory
+
+This project shares the same philosophy as [OpenClaw](https://github.com/pinkpixel-dev/OpenClaw) (moltbot)'s memory system — persistent, workspace-integrated, embedding-powered agent memory — but takes a different approach for Claude Code:
+
+| | OpenClaw / moltbot | EF Memory |
+|---|---|---|
+| **Interface** | CLI commands (`openclaw memory ...`) | Claude Code skills (`/memory-save`, `/memory-search`, ...) |
+| **Storage** | Markdown files + workspace | Structured JSONL + SQLite vector DB |
+| **Retrieval** | Embedding search | 4-level degradation (Hybrid → Vector → Keyword → Basic) |
+| **Safety** | Auto memory flush | Human-in-the-loop for all writes |
+| **Typing** | Free-form | Schema-enforced (type, severity, source, verify) |
+| **Lifecycle** | Manual | Auto-verify, confidence decay, dedup clustering |
+| **Injection** | Plugin-based | Auto-inject Hard rules to `.claude/rules/` |
+
+Both systems believe that **AI agents need durable project memory** — not just conversation history, but structured knowledge that survives across sessions.
 
 ---
 
