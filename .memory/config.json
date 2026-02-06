@@ -1,6 +1,6 @@
 {
   "$schema": "./config.schema.json",
-  "version": "1.1",
+  "version": "1.2",
 
   "embedding": {
     "enabled": false,
@@ -68,5 +68,14 @@
   "import": {
     "supported_sources": ["INCIDENTS.md"],
     "require_line_numbers": false
+  },
+
+  "automation": {
+    "startup_check": true,
+    "pipeline_steps": ["sync_embeddings", "generate_rules"],
+    "pipeline_after_approve": false,
+    "dedup_check_on_capture": true,
+    "dedup_threshold": 0.85,
+    "startup_source_sample_size": 10
   }
 }

@@ -250,6 +250,53 @@ If this is a new lesson worth remembering, consider running `/memory-save` to ca
 
 ---
 
+## Startup Health Check (V2)
+
+Run at session start for a quick health summary:
+
+```bash
+python3 .memory/scripts/pipeline_cli.py --startup
+```
+
+This shows:
+- Pending drafts awaiting approval
+- Stale entries (not verified within 90 days)
+- Source warnings (referenced files no longer exist)
+
+Example output:
+```
+EF Memory Startup Check
+  Total entries:    15
+  Pending drafts:   3
+  Stale entries:    2
+  Source warnings:  1
+
+  发现 3 条待审记忆 / 1 条 source 告警 / 2 条过期 (>90天)
+```
+
+---
+
+## Draft Management (V2)
+
+Review and manage captured memory drafts:
+
+```bash
+python3 .memory/scripts/capture_cli.py list      # List pending drafts
+python3 .memory/scripts/capture_cli.py review     # Review with verification
+python3 .memory/scripts/capture_cli.py approve <filename>  # Approve to events.jsonl
+python3 .memory/scripts/capture_cli.py reject <filename>   # Delete draft
+```
+
+Verify entries against schema and sources:
+
+```bash
+python3 .memory/scripts/verify_cli.py             # Verify all entries
+python3 .memory/scripts/verify_cli.py --drafts     # Verify drafts
+python3 .memory/scripts/verify_cli.py --schema-only # Schema checks only
+```
+
+---
+
 ## Future Extensions
 
 The following features are intentionally deferred:
@@ -260,4 +307,4 @@ The following features are intentionally deferred:
 - Hard logic for `last_verified` expiration
 - Context-aware auto-search (triggered by file path matching)
 
-These will be added as memory volume grows or M3+ milestones are implemented.
+These will be added as memory volume grows or M5+ milestones are implemented.

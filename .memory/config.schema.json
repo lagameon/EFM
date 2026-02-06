@@ -200,6 +200,47 @@
           "description": "Cosine similarity threshold for duplicate detection"
         }
       }
+    },
+    "automation": {
+      "type": "object",
+      "description": "M4 Automation Engine configuration",
+      "properties": {
+        "startup_check": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable startup health check"
+        },
+        "pipeline_steps": {
+          "type": "array",
+          "items": {"type": "string", "enum": ["sync_embeddings", "generate_rules"]},
+          "default": ["sync_embeddings", "generate_rules"],
+          "description": "Ordered pipeline steps to run"
+        },
+        "pipeline_after_approve": {
+          "type": "boolean",
+          "default": false,
+          "description": "Auto-run pipeline after draft approval"
+        },
+        "dedup_check_on_capture": {
+          "type": "boolean",
+          "default": true,
+          "description": "Check for duplicates when creating drafts"
+        },
+        "dedup_threshold": {
+          "type": "number",
+          "default": 0.85,
+          "minimum": 0.5,
+          "maximum": 1.0,
+          "description": "Text similarity threshold for duplicate detection"
+        },
+        "startup_source_sample_size": {
+          "type": "integer",
+          "default": 10,
+          "minimum": 1,
+          "maximum": 50,
+          "description": "Number of entries to spot-check during startup"
+        }
+      }
     }
   }
 }
