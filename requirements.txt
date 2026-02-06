@@ -1,0 +1,8 @@
+# EF Memory V2 — Embedding Layer
+# Base: Python 3.11+ stdlib only (json, sqlite3, struct, math, hashlib)
+# No mandatory external dependencies.
+#
+# Install the provider SDK you need:
+#   pip install google-genai      # Gemini embeddings (primary)
+#   pip install openai             # OpenAI embeddings
+#   pip install ollama             # Ollama local embeddings

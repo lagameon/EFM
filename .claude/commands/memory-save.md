@@ -188,3 +188,19 @@ Tags: leakage, feature-engine, shift, rolling
 
 ---
 ```
+
+---
+
+## Post-Save: Rule Generation (V2)
+
+After writing a **Hard** entry to `events.jsonl`, remind the user:
+
+```
+Memory saved. If this is a Hard entry, you can regenerate Claude Code rules:
+  python3 .memory/scripts/generate_rules_cli.py
+
+This will update .claude/rules/ef-memory/ with the latest Hard rules,
+so Claude Code automatically applies them when editing relevant files.
+```
+
+To preview without writing: `python3 .memory/scripts/generate_rules_cli.py --dry-run`

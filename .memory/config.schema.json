@@ -116,6 +116,90 @@
           "description": "Whether to require line numbers in sources"
         }
       }
+    },
+    "embedding": {
+      "type": "object",
+      "description": "Embedding layer configuration (Phase II). Optional — system works without it.",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "default": false,
+          "description": "Enable the embedding layer. When false, system operates in Phase I mode."
+        },
+        "provider": {
+          "type": "string",
+          "enum": ["gemini", "openai", "ollama"],
+          "default": "gemini",
+          "description": "Primary embedding provider"
+        },
+        "fallback": {
+          "type": "array",
+          "items": {"type": "string"},
+          "description": "Fallback providers if primary fails"
+        },
+        "providers": {
+          "type": "object",
+          "description": "Per-provider configuration",
+          "properties": {
+            "gemini": {
+              "type": "object",
+              "properties": {
+                "model": {"type": "string", "default": "gemini-embedding-001"},
+                "dimensions": {"type": "integer", "default": 768},
+                "api_key_env": {"type": "string", "default": "GOOGLE_API_KEY"}
+              }
+            },
+            "openai": {
+              "type": "object",
+              "properties": {
+                "model": {"type": "string", "default": "text-embedding-3-small"},
+                "dimensions": {"type": "integer", "default": 1536},
+                "api_key_env": {"type": "string", "default": "OPENAI_API_KEY"}
+              }
+            },
+            "ollama": {
+              "type": "object",
+              "properties": {
+                "model": {"type": "string", "default": "nomic-embed-text"},
+                "dimensions": {"type": "integer", "default": 768},
+                "host": {"type": "string", "default": "http://localhost:11434"}
+              }
+            }
+          }
+        },
+        "search": {
+          "type": "object",
+          "description": "Hybrid search weight configuration",
+          "properties": {
+            "bm25_weight": {"type": "number", "default": 0.4, "minimum": 0, "maximum": 1},
+            "vector_weight": {"type": "number", "default": 0.6, "minimum": 0, "maximum": 1},
+            "hard_s1_boost": {"type": "number", "default": 0.15},
+            "hard_s2_boost": {"type": "number", "default": 0.10},
+            "hard_s3_boost": {"type": "number", "default": 0.05},
+            "min_score": {"type": "number", "default": 0.1}
+          }
+        },
+        "sync": {
+          "type": "object",
+          "properties": {
+            "auto_on_save": {"type": "boolean", "default": true},
+            "batch_size": {"type": "integer", "default": 20, "minimum": 1, "maximum": 100}
+          }
+        },
+        "storage": {
+          "type": "object",
+          "properties": {
+            "db_path": {"type": "string", "default": ".memory/vectors.db"}
+          }
+        },
+        "dedup_threshold": {
+          "type": "number",
+          "default": 0.92,
+          "minimum": 0.5,
+          "maximum": 1.0,
+          "description": "Cosine similarity threshold for duplicate detection"
+        }
+      }
     }
   }
 }

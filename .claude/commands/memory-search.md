@@ -12,6 +12,39 @@ Retrieve reusable engineering knowledge from project memory, returning Rules, Le
 
 ---
 
+## Search Modes (V2)
+
+The search engine supports four modes with automatic degradation:
+
+| Mode | Indicator | Requirements | Description |
+|------|-----------|-------------|-------------|
+| **Hybrid** | `[hybrid]` | Embedder + FTS5 | BM25 + Vector similarity + Re-rank (best quality) |
+| **Vector** | `[vector]` | Embedder only | Pure semantic similarity search |
+| **Keyword** | `[keyword]` | FTS5 only | BM25 full-text keyword search |
+| **Basic** | `[basic]` | None | Token overlap on events.jsonl (zero dependencies) |
+
+**Automatic degradation**: The engine selects the best available mode. When degraded from the ideal mode, a warning indicator (`⚠`) is shown in the output header.
+
+### Parameters
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `--full` | off | Show Content and Verify fields |
+| `--debug` | off | Show BM25/Vector/Boost score breakdown |
+| `--mode <mode>` | auto | Force a specific search mode |
+| `--max-results <N>` | 5 | Maximum entries to return |
+
+### CLI Usage
+
+```bash
+python3 .memory/scripts/search_cli.py "leakage shift"
+python3 .memory/scripts/search_cli.py "rolling" --max-results 3
+python3 .memory/scripts/search_cli.py "label" --mode keyword
+python3 .memory/scripts/search_cli.py "shift" --full --debug
+```
+
+---
+
 ## Priority and Filtering Logic
 
 ### Return Order (strictly enforced)
@@ -59,7 +92,7 @@ Source: <normalized source>
 ### Full Output Template
 
 ```
-/memory-search <query>
+/memory-search <query>  [hybrid|vector|keyword|basic]
 
 Found <N> entries (showing top <M>):
 
@@ -217,7 +250,7 @@ If this is a new lesson worth remembering, consider running `/memory-save` to ca
 
 ---
 
-## Future Extensions (Phase 2)
+## Future Extensions
 
 The following features are intentionally deferred:
 
@@ -225,5 +258,6 @@ The following features are intentionally deferred:
 - `--severity=<S1|S2|S3>` filtering
 - `--since=<date>` time-based filtering
 - Hard logic for `last_verified` expiration
+- Context-aware auto-search (triggered by file path matching)
 
-These will be added when memory volume exceeds 50 entries.
+These will be added as memory volume grows or M3+ milestones are implemented.

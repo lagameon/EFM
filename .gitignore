@@ -18,5 +18,13 @@ venv/
 # Memory archive (optional, user-specific)
 .memory/archive/
 
+# EFM V2: Embedding layer (derived artifacts)
+.memory/vectors.db
+.memory/drafts/*.json
+.claude/rules/ef-memory/
+
+# Environment
+.env.local
+
 # Logs
 *.log

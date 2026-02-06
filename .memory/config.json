@@ -1,6 +1,45 @@
 {
   "$schema": "./config.schema.json",
-  "version": "1.0",
+  "version": "1.1",
+
+  "embedding": {
+    "enabled": false,
+    "provider": "gemini",
+    "fallback": ["openai"],
+    "providers": {
+      "gemini": {
+        "model": "gemini-embedding-001",
+        "dimensions": 768,
+        "api_key_env": "GOOGLE_API_KEY"
+      },
+      "openai": {
+        "model": "text-embedding-3-small",
+        "dimensions": 1536,
+        "api_key_env": "OPENAI_API_KEY"
+      },
+      "ollama": {
+        "model": "nomic-embed-text",
+        "dimensions": 768,
+        "host": "http://localhost:11434"
+      }
+    },
+    "search": {
+      "bm25_weight": 0.4,
+      "vector_weight": 0.6,
+      "hard_s1_boost": 0.15,
+      "hard_s2_boost": 0.10,
+      "hard_s3_boost": 0.05,
+      "min_score": 0.1
+    },
+    "sync": {
+      "auto_on_save": true,
+      "batch_size": 20
+    },
+    "storage": {
+      "db_path": ".memory/vectors.db"
+    },
+    "dedup_threshold": 0.92
+  },
 
   "paths": {
     "CODE_ROOTS": ["src/"],
