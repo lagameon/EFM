@@ -2,7 +2,7 @@
 EF Memory V2 — Auto-Sync (Pipeline Orchestration)
 
 Orchestrates the automation pipeline:
-  - run_pipeline: sync embeddings + generate rules (steps are isolated)
+  - run_pipeline: sync embeddings + generate rules + evolution check (steps are isolated)
   - check_startup: lightweight health check for session start
 
 Reuses existing modules:
@@ -10,6 +10,7 @@ Reuses existing modules:
   - generate_rules.generate_rule_files (M3)
   - auto_verify.check_staleness, verify_source (M4.1)
   - auto_capture.list_drafts (M4.2)
+  - evolution.build_evolution_report (M5)
 
 No external dependencies — pure Python stdlib + internal modules.
 """
@@ -39,7 +40,7 @@ logger = logging.getLogger("efm.auto_sync")
 @dataclass
 class StepResult:
     """Result of a single pipeline step."""
-    step: str = ""               # "sync_embeddings" | "generate_rules"
+    step: str = ""               # "sync_embeddings" | "generate_rules" | "evolution_check"
     success: bool = True
     skipped: bool = False
     skip_reason: str = ""
@@ -83,8 +84,9 @@ def run_pipeline(
     Run the automation pipeline with specified steps.
 
     Available steps (in order):
-        "sync_embeddings" — sync events.jsonl -> vectors.db (FTS + optional vectors)
-        "generate_rules"  — regenerate .claude/rules/ef-memory/*.md from Hard entries
+        "sync_embeddings"  — sync events.jsonl -> vectors.db (FTS + optional vectors)
+        "generate_rules"   — regenerate .claude/rules/ef-memory/*.md from Hard entries
+        "evolution_check"  — run evolution report (duplicates, confidence, deprecations)
 
     Each step is isolated: failure in one doesn't block others.
     Embedding disabled → sync still updates FTS index.
@@ -106,6 +108,8 @@ def run_pipeline(
             result = _run_sync_step(events_path, config)
         elif step_name == "generate_rules":
             result = _run_rules_step(events_path, config, project_root)
+        elif step_name == "evolution_check":
+            result = _run_evolution_step(events_path, config, project_root)
         else:
             result = StepResult(
                 step=step_name,
@@ -219,6 +223,44 @@ def _run_rules_step(
         result.success = False
         result.error = str(e)
         logger.error(f"generate_rules step failed: {e}")
+
+    return result
+
+
+def _run_evolution_step(
+    events_path: Path,
+    config: dict,
+    project_root: Path,
+) -> StepResult:
+    """Run the evolution_check step."""
+    result = StepResult(step="evolution_check")
+
+    try:
+        from .evolution import build_evolution_report
+
+        evo_report = build_evolution_report(
+            events_path=events_path,
+            config=config,
+            project_root=project_root,
+        )
+
+        result.success = True
+        result.details = {
+            "total_entries": evo_report.total_entries,
+            "active_entries": evo_report.active_entries,
+            "health_score": round(evo_report.health_score, 3),
+            "duplicate_groups": len(evo_report.duplicate_report.groups) if evo_report.duplicate_report else 0,
+            "deprecation_candidates": len(evo_report.deprecation_report.candidates) if evo_report.deprecation_report else 0,
+            "merge_suggestions": len(evo_report.merge_suggestions),
+            "confidence_high": evo_report.entries_high_confidence,
+            "confidence_medium": evo_report.entries_medium_confidence,
+            "confidence_low": evo_report.entries_low_confidence,
+        }
+
+    except Exception as e:
+        result.success = False
+        result.error = str(e)
+        logger.error(f"evolution_check step failed: {e}")
 
     return result
 

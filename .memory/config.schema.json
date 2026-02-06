@@ -212,7 +212,7 @@
         },
         "pipeline_steps": {
           "type": "array",
-          "items": {"type": "string", "enum": ["sync_embeddings", "generate_rules"]},
+          "items": {"type": "string", "enum": ["sync_embeddings", "generate_rules", "evolution_check"]},
           "default": ["sync_embeddings", "generate_rules"],
           "description": "Ordered pipeline steps to run"
         },
@@ -239,6 +239,53 @@
           "minimum": 1,
           "maximum": 50,
           "description": "Number of entries to spot-check during startup"
+        }
+      }
+    },
+    "evolution": {
+      "type": "object",
+      "description": "M5 Memory Evolution configuration",
+      "properties": {
+        "confidence_half_life_days": {
+          "type": "integer",
+          "default": 120,
+          "minimum": 7,
+          "maximum": 365,
+          "description": "Half-life in days for confidence decay model"
+        },
+        "deprecation_confidence_threshold": {
+          "type": "number",
+          "default": 0.3,
+          "minimum": 0.0,
+          "maximum": 1.0,
+          "description": "Entries below this confidence are deprecation candidates"
+        },
+        "merge_auto_suggest": {
+          "type": "boolean",
+          "default": true,
+          "description": "Auto-suggest merges from duplicate groups"
+        },
+        "source_quality_weights": {
+          "type": "object",
+          "description": "Quality weights by source type for confidence scoring",
+          "properties": {
+            "code":     {"type": "number", "default": 1.0},
+            "function": {"type": "number", "default": 1.0},
+            "markdown": {"type": "number", "default": 0.7},
+            "commit":   {"type": "number", "default": 0.6},
+            "pr":       {"type": "number", "default": 0.5},
+            "unknown":  {"type": "number", "default": 0.3}
+          }
+        },
+        "confidence_weights": {
+          "type": "object",
+          "description": "Component weights for confidence calculation (must sum to 1.0)",
+          "properties": {
+            "source_quality":      {"type": "number", "default": 0.30},
+            "age_factor":          {"type": "number", "default": 0.30},
+            "verification_boost":  {"type": "number", "default": 0.15},
+            "source_validity":     {"type": "number", "default": 0.25}
+          }
         }
       }
     }
