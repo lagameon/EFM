@@ -47,8 +47,10 @@ SOURCE_PR_PATTERN = re.compile(r"^PR\s*#\d+$")
 SOURCE_FUNC_PATTERN = re.compile(r"^.+::.+$")
 
 # Verify command safety (core-011, core-012)
-DENY_PATTERNS = [">", ">>", "rm ", "mv ", "cp ", "tee ", "chmod ", "chown ",
-                 "git ", "sed ", "awk "]
+# Redirect operators checked via substring (they are not words)
+DENY_REDIRECT_PATTERNS = [">>", ">"]
+# Destructive commands checked as whole words (first token of a pipe segment)
+DENY_COMMANDS = {"rm", "mv", "cp", "tee", "chmod", "chown", "git", "sed", "awk"}
 DEFAULT_ALLOWED_COMMANDS = ["grep", "rg", "find", "wc", "head", "tail", "echo"]
 
 
@@ -238,21 +240,16 @@ def _matches_source_pattern(src: str) -> bool:
 
 def _parse_iso8601(timestamp: str) -> datetime:
     """Parse an ISO 8601 timestamp string to datetime (UTC)."""
-    # Handle common variants
-    ts = timestamp.rstrip("Z")
-    if "+" not in ts and "-" not in ts[10:]:
-        # No timezone info, assume UTC
-        ts += "+00:00"
-    elif ts.endswith("Z") or timestamp.endswith("Z"):
-        ts = ts.rstrip("Z") + "+00:00"
+    # Normalize Z suffix to +00:00 for fromisoformat compatibility
+    ts = timestamp.replace("Z", "+00:00")
 
-    # Try parsing with fromisoformat
+    # Try fromisoformat first (handles most ISO 8601 variants on Python 3.11+)
     try:
         return datetime.fromisoformat(ts)
     except ValueError:
         pass
 
-    # Fallback: try common format
+    # Fallback: try common formats
     for fmt in ["%Y-%m-%dT%H:%M:%S%z", "%Y-%m-%dT%H:%M:%S"]:
         try:
             return datetime.strptime(timestamp, fmt)
@@ -601,6 +598,7 @@ def check_duplicates(
     entry: dict,
     events_path: Path,
     threshold: float = 0.85,
+    _preloaded_entries: Optional[Dict[str, dict]] = None,
 ) -> DedupResult:
     """
     Check for near-duplicate entries using text similarity.
@@ -610,6 +608,10 @@ def check_duplicates(
 
     Threshold default: 0.85 (lower than embedding's 0.92 because
     text similarity is less precise).
+
+    Args:
+        _preloaded_entries: Optional pre-loaded entries dict to avoid
+            re-reading events.jsonl on every call (used by verify_all_entries).
     """
     result = DedupResult(threshold=threshold)
     entry_id = entry.get("id", "")
@@ -618,8 +620,8 @@ def check_duplicates(
     if not candidate_text:
         return result
 
-    # Load existing entries
-    existing = _load_entries_latest_wins(events_path)
+    # Use pre-loaded entries if available, otherwise load from file
+    existing = _preloaded_entries if _preloaded_entries is not None else _load_entries_latest_wins(events_path)
 
     for existing_id, existing_entry in existing.items():
         # Don't compare against self
@@ -669,15 +671,20 @@ def check_verify_command(
     cmd = command.strip()
     allowed = allowed_commands or DEFAULT_ALLOWED_COMMANDS
 
-    # core-011: Check for write operators
-    for pattern in DENY_PATTERNS:
+    # core-011: Check for redirect operators (substring match is correct here)
+    for pattern in DENY_REDIRECT_PATTERNS:
         if pattern in cmd:
-            return ("FAIL", f"Destructive pattern '{pattern.strip()}' in verify command")
+            return ("FAIL", f"Destructive pattern '{pattern}' in verify command")
+
+    # core-011: Check for destructive commands as first word of pipe segments
+    pipe_segments = [part.strip() for part in cmd.split("|") if part.strip()]
+    for segment in pipe_segments:
+        first_word = segment.split()[0] if segment.split() else ""
+        if first_word in DENY_COMMANDS:
+            return ("FAIL", f"Destructive command '{first_word}' in verify command")
 
     # core-012: Check command allowlist
-    first_word = cmd.split()[0] if cmd.split() else ""
-    # Handle piped commands
-    pipe_commands = [part.strip().split()[0] for part in cmd.split("|") if part.strip()]
+    pipe_commands = [seg.split()[0] for seg in pipe_segments if seg.split()]
     for pc in pipe_commands:
         if pc not in allowed:
             return ("WARN", f"Command '{pc}' not in allowlist {allowed}")
@@ -694,12 +701,17 @@ def verify_entry(
     events_path: Path,
     project_root: Path,
     config: dict,
+    _preloaded_entries: Optional[Dict[str, dict]] = None,
 ) -> Dict:
     """
     Run all verification checks on a single entry.
 
     Returns a dict with:
         entry_id, schema, sources, staleness, dedup, verify_cmd, overall
+
+    Args:
+        _preloaded_entries: Optional pre-loaded entries dict to avoid
+            re-reading events.jsonl for dedup checks.
     """
     entry_id = entry.get("id", "<unknown>")
 
@@ -717,7 +729,7 @@ def verify_entry(
 
     # Dedup
     dedup_threshold = config.get("automation", {}).get("dedup_threshold", 0.85)
-    dedup_result = check_duplicates(entry, events_path, dedup_threshold)
+    dedup_result = check_duplicates(entry, events_path, dedup_threshold, _preloaded_entries=_preloaded_entries)
 
     # Verify command
     allowed_cmds = config.get("verify", {}).get("allowed_commands", DEFAULT_ALLOWED_COMMANDS)
@@ -776,7 +788,7 @@ def verify_all_entries(
             continue
 
         report.entries_checked += 1
-        result = verify_entry(entry, events_path, project_root, config)
+        result = verify_entry(entry, events_path, project_root, config, _preloaded_entries=entries)
         report.results.append(result)
 
         if result["overall"] == "OK":

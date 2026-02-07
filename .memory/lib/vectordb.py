@@ -41,7 +41,12 @@ def cosine_similarity(a: List[float], b: List[float]) -> float:
     """
     Compute cosine similarity between two vectors.
     Returns a value in [-1, 1]. Higher = more similar.
+    Raises ValueError if vectors have different lengths.
     """
+    if len(a) != len(b):
+        raise ValueError(
+            f"Vector dimension mismatch: {len(a)} vs {len(b)}"
+        )
     dot = 0.0
     norm_a = 0.0
     norm_b = 0.0
@@ -72,6 +77,7 @@ class VectorDB:
         self._db_path = db_path
         self._conn: Optional[sqlite3.Connection] = None
         self._fts5_available: bool = True
+        self._batch_depth: int = 0
 
     # --- Lifecycle ---
 
@@ -88,9 +94,24 @@ class VectorDB:
             self._conn.close()
             self._conn = None
 
+    def __enter__(self) -> "VectorDB":
+        """Context manager: open + ensure schema."""
+        self.open()
+        self.ensure_schema()
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb) -> None:
+        """Context manager: close."""
+        self.close()
+
+    def _require_conn(self) -> None:
+        """Raise RuntimeError if database is not open."""
+        if self._conn is None:
+            raise RuntimeError("Database not open. Call open() first.")
+
     def ensure_schema(self) -> None:
         """Create tables if they don't exist."""
-        assert self._conn is not None, "Database not open. Call open() first."
+        self._require_conn()
 
         self._conn.execute("""
             CREATE TABLE IF NOT EXISTS vectors (
@@ -136,6 +157,24 @@ class VectorDB:
 
         self._conn.commit()
 
+    # --- Batch transaction support ---
+
+    def begin_batch(self) -> None:
+        """Begin a batch transaction. Supports nesting — only outermost commits."""
+        self._batch_depth += 1
+
+    def end_batch(self) -> None:
+        """End batch transaction. Commits only when outermost batch ends."""
+        if self._batch_depth > 0:
+            self._batch_depth -= 1
+        if self._batch_depth == 0 and self._conn:
+            self._conn.commit()
+
+    def _auto_commit(self) -> None:
+        """Commit only if not in a batch transaction."""
+        if self._batch_depth == 0 and self._conn:
+            self._conn.commit()
+
     # --- Vector operations ---
 
     def upsert_vector(
@@ -149,6 +188,7 @@ class VectorDB:
         deprecated: bool = False,
     ) -> None:
         """Insert or update a vector embedding."""
+        self._require_conn()
         now = datetime.now(timezone.utc).isoformat()
         blob = pack_vector(embedding)
         self._conn.execute(
@@ -168,10 +208,11 @@ class VectorDB:
             (entry_id, text_hash, provider, model, dimensions,
              blob, int(deprecated), now, now),
         )
-        self._conn.commit()
+        self._auto_commit()
 
     def get_vector(self, entry_id: str) -> Optional[List[float]]:
         """Get the embedding vector for an entry, or None."""
+        self._require_conn()
         row = self._conn.execute(
             "SELECT embedding, dimensions FROM vectors WHERE entry_id = ?",
             (entry_id,),
@@ -182,6 +223,7 @@ class VectorDB:
 
     def has_vector(self, entry_id: str) -> bool:
         """Check if a vector exists for the given entry."""
+        self._require_conn()
         row = self._conn.execute(
             "SELECT 1 FROM vectors WHERE entry_id = ?",
             (entry_id,),
@@ -190,6 +232,7 @@ class VectorDB:
 
     def needs_update(self, entry_id: str, text_hash: str) -> bool:
         """Check if the vector needs updating (hash mismatch or missing)."""
+        self._require_conn()
         row = self._conn.execute(
             "SELECT text_hash FROM vectors WHERE entry_id = ?",
             (entry_id,),
@@ -200,16 +243,18 @@ class VectorDB:
 
     def mark_deprecated(self, entry_id: str) -> None:
         """Mark a vector as deprecated (excluded from search, kept for dedup)."""
+        self._require_conn()
         self._conn.execute(
             "UPDATE vectors SET deprecated = 1, updated_at = ? WHERE entry_id = ?",
             (datetime.now(timezone.utc).isoformat(), entry_id),
         )
-        self._conn.commit()
+        self._auto_commit()
 
     def delete_vector(self, entry_id: str) -> None:
         """Delete a vector entirely."""
+        self._require_conn()
         self._conn.execute("DELETE FROM vectors WHERE entry_id = ?", (entry_id,))
-        self._conn.commit()
+        self._auto_commit()
 
     # --- Vector search ---
 
@@ -224,6 +269,7 @@ class VectorDB:
 
         Returns list of (entry_id, similarity_score) sorted by score descending.
         """
+        self._require_conn()
         where = "WHERE deprecated = 0" if exclude_deprecated else ""
         rows = self._conn.execute(
             f"SELECT entry_id, embedding, dimensions FROM vectors {where}"
@@ -244,6 +290,7 @@ class VectorDB:
         """Insert or update FTS5 index entry."""
         if not self._fts5_available:
             return
+        self._require_conn()
 
         # FTS5 doesn't support UPSERT, so delete+insert
         self._conn.execute(
@@ -253,16 +300,17 @@ class VectorDB:
             "INSERT INTO fts_entries (entry_id, title, text, tags) VALUES (?, ?, ?, ?)",
             (entry_id, title, text, tags),
         )
-        self._conn.commit()
+        self._auto_commit()
 
     def delete_fts(self, entry_id: str) -> None:
         """Delete an FTS entry."""
         if not self._fts5_available:
             return
+        self._require_conn()
         self._conn.execute(
             "DELETE FROM fts_entries WHERE entry_id = ?", (entry_id,)
         )
-        self._conn.commit()
+        self._auto_commit()
 
     def search_fts(self, query: str, limit: int = 10) -> List[Tuple[str, float]]:
         """
@@ -274,6 +322,12 @@ class VectorDB:
         """
         if not self._fts5_available:
             return []
+        self._require_conn()
+
+        # Sanitize query: quote each token to escape FTS5 operators
+        sanitized = self._sanitize_fts_query(query)
+        if not sanitized:
+            return []
 
         try:
             rows = self._conn.execute(
@@ -284,7 +338,7 @@ class VectorDB:
                 ORDER BY bm25(fts_entries)
                 LIMIT ?
                 """,
-                (query, limit),
+                (sanitized, limit),
             ).fetchall()
         except sqlite3.OperationalError:
             # Malformed FTS query — return empty
@@ -303,8 +357,19 @@ class VectorDB:
 
     # --- Sync state ---
 
+    @staticmethod
+    def _sanitize_fts_query(query: str) -> str:
+        """Sanitize a query string for FTS5 MATCH by quoting each token."""
+        import re as _re
+        tokens = _re.findall(r'\w+', query)
+        if not tokens:
+            return ""
+        # Quote each token to prevent FTS5 operator interpretation
+        return " ".join(f'"{t}"' for t in tokens)
+
     def get_sync_cursor(self) -> Optional[int]:
         """Get the last synced line number, or None if never synced."""
+        self._require_conn()
         row = self._conn.execute(
             "SELECT value FROM sync_state WHERE key = 'last_line'",
         ).fetchone()
@@ -314,6 +379,7 @@ class VectorDB:
 
     def set_sync_cursor(self, line_number: int) -> None:
         """Update the sync cursor to the given line number."""
+        self._require_conn()
         self._conn.execute(
             """
             INSERT INTO sync_state (key, value) VALUES ('last_line', ?)
@@ -321,12 +387,13 @@ class VectorDB:
             """,
             (str(line_number),),
         )
-        self._conn.commit()
+        self._auto_commit()
 
     # --- Stats ---
 
     def stats(self) -> dict:
         """Return database statistics."""
+        self._require_conn()
         total = self._conn.execute("SELECT COUNT(*) FROM vectors").fetchone()[0]
         active = self._conn.execute(
             "SELECT COUNT(*) FROM vectors WHERE deprecated = 0"

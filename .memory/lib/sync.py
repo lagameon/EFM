@@ -75,10 +75,10 @@ def _read_events(
 
     with open(events_path, "r", encoding="utf-8") as f:
         for i, line in enumerate(f):
+            total_lines = i + 1  # Track total lines (including blank) for cursor
             line = line.strip()
             if not line:
                 continue
-            total_lines = i + 1
 
             if i < start_line:
                 continue
@@ -142,14 +142,18 @@ def sync_embeddings(
         else:
             active_entries[entry_id] = entry
 
-    # Handle deprecated entries
+    # Handle deprecated entries (mark in vectors + remove from FTS)
+    vectordb.begin_batch()
     for entry_id in deprecated_ids:
         vectordb.mark_deprecated(entry_id)
+        vectordb.delete_fts(entry_id)
         report.entries_deprecated += 1
+    vectordb.end_batch()
 
     # Prepare embedding batches
     to_embed: list[tuple[str, dict, str, str]] = []  # (entry_id, entry, text, text_hash)
 
+    vectordb.begin_batch()
     for entry_id, entry in active_entries.items():
         embed_text = build_embedding_text(entry)
         text_hash = _compute_text_hash(embed_text)
@@ -173,6 +177,7 @@ def sync_embeddings(
             continue
 
         to_embed.append((entry_id, entry, embed_text, text_hash))
+    vectordb.end_batch()
 
     # Batch embed and store
     for batch_start in range(0, len(to_embed), batch_size):
@@ -187,6 +192,7 @@ def sync_embeddings(
             report.errors.append(error_msg)
             continue
 
+        vectordb.begin_batch()
         for (entry_id, entry, embed_text, text_hash), result in zip(batch, results):
             try:
                 is_new = not vectordb.has_vector(entry_id)
@@ -207,9 +213,18 @@ def sync_embeddings(
                 error_msg = f"Failed to store vector for {entry_id}: {e}"
                 logger.error(error_msg)
                 report.errors.append(error_msg)
+        vectordb.end_batch()
 
-    # Update sync cursor
-    vectordb.set_sync_cursor(total_lines)
+    # Update sync cursor only if no errors occurred.
+    # When errors exist, don't advance — failed entries will be retried
+    # on the next incremental sync.
+    if not report.errors:
+        vectordb.set_sync_cursor(total_lines)
+    else:
+        logger.warning(
+            f"Sync had {len(report.errors)} errors — cursor NOT advanced. "
+            f"Failed entries will be retried on next sync."
+        )
 
     report.duration_ms = (time.monotonic() - start_time) * 1000
     return report

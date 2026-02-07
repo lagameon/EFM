@@ -14,6 +14,7 @@ approve_draft is only callable via CLI.
 No external dependencies — pure Python stdlib + internal modules.
 """
 
+import copy
 import json
 import logging
 import re
@@ -107,6 +108,9 @@ def create_draft(entry: dict, drafts_dir: Path) -> DraftInfo:
     Does NOT write to events.jsonl.
     """
     info = DraftInfo()
+
+    # Deep copy to avoid mutating caller's dict
+    entry = copy.deepcopy(entry)
 
     # Advisory validation
     validation = validate_schema(entry)
@@ -231,7 +235,7 @@ def approve_draft(draft_path: Path, events_path: Path) -> ApproveResult:
     if meta:
         entry["_meta"] = meta
     elif "_meta" in entry:
-        entry["_meta"] = {}
+        del entry["_meta"]
 
     # Append to events.jsonl (create if missing)
     try:

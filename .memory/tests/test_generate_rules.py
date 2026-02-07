@@ -82,11 +82,12 @@ class TestLoadHardEntries(unittest.TestCase):
             for entry in SAMPLE_ENTRIES:
                 f.write(json.dumps(entry) + "\n")
 
-        entries = _load_hard_entries(self.events_path)
+        entries, total_scanned = _load_hard_entries(self.events_path)
         # SAMPLE_ENTRIES[0] and [1] are hard, [2] is soft
         self.assertEqual(len(entries), 2)
         for e in entries:
             self.assertEqual(e["classification"], "hard")
+        self.assertEqual(total_scanned, 3)  # All 3 entries scanned
 
     def test_filters_deprecated(self):
         dep = SAMPLE_ENTRIES[0].copy()
@@ -95,7 +96,7 @@ class TestLoadHardEntries(unittest.TestCase):
             f.write(json.dumps(dep) + "\n")
             f.write(json.dumps(SAMPLE_ENTRIES[1]) + "\n")
 
-        entries = _load_hard_entries(self.events_path)
+        entries, total_scanned = _load_hard_entries(self.events_path)
         self.assertEqual(len(entries), 1)
         self.assertEqual(entries[0]["id"], SAMPLE_ENTRIES[1]["id"])
 
@@ -118,18 +119,20 @@ class TestLoadHardEntries(unittest.TestCase):
             f.write(json.dumps(e_s1) + "\n")
             f.write(json.dumps(e_s2) + "\n")
 
-        entries = _load_hard_entries(self.events_path)
+        entries, total_scanned = _load_hard_entries(self.events_path)
         severities = [e["severity"] for e in entries]
         self.assertEqual(severities, ["S1", "S2", "S3"])
 
     def test_empty_file(self):
         self.events_path.touch()
-        entries = _load_hard_entries(self.events_path)
+        entries, total_scanned = _load_hard_entries(self.events_path)
         self.assertEqual(len(entries), 0)
+        self.assertEqual(total_scanned, 0)
 
     def test_nonexistent_file(self):
-        entries = _load_hard_entries(Path(self.tmpdir) / "nonexistent.jsonl")
+        entries, total_scanned = _load_hard_entries(Path(self.tmpdir) / "nonexistent.jsonl")
         self.assertEqual(len(entries), 0)
+        self.assertEqual(total_scanned, 0)
 
     def test_latest_wins_semantics(self):
         v1 = SAMPLE_ENTRIES[0].copy()
@@ -141,7 +144,7 @@ class TestLoadHardEntries(unittest.TestCase):
             f.write(json.dumps(v1) + "\n")
             f.write(json.dumps(v2) + "\n")
 
-        entries = _load_hard_entries(self.events_path)
+        entries, total_scanned = _load_hard_entries(self.events_path)
         self.assertEqual(len(entries), 1)
         self.assertEqual(entries[0]["title"], "Version 2")
 

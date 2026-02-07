@@ -843,5 +843,111 @@ class TestBuildEvolutionReport(unittest.TestCase):
         self.assertEqual(report.health_score, 0.0)
 
 
+class TestRankEntriesEmpty(unittest.TestCase):
+    """Test _rank_entries_for_merge edge cases."""
+
+    def test_empty_entry_ids(self):
+        from lib.evolution import _rank_entries_for_merge
+        result = _rank_entries_for_merge([], {})
+        self.assertEqual(result, [])
+
+    def test_missing_entry_in_dict(self):
+        from lib.evolution import _rank_entries_for_merge
+        # eid exists in list but not in entries dict — should not crash
+        result = _rank_entries_for_merge(["missing-id"], {})
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0], "missing-id")
+
+
+class TestConfidenceEdgeCases(unittest.TestCase):
+
+    def setUp(self):
+        self.tmpdir = Path(tempfile.mkdtemp())
+        self.events_path = self.tmpdir / "events.jsonl"
+        self.events_path.write_text("")
+        self.project_root = self.tmpdir
+
+    def test_half_life_zero(self):
+        """half_life=0 should not divide by zero; age_factor should be 0."""
+        config = _make_config()
+        config["evolution"]["confidence_half_life_days"] = 0
+        entry = _make_entry(
+            id="lesson-hl0-11111111",
+            created_at=_days_ago_iso(10),
+            source=["PR #100"],
+        )
+        score = calculate_confidence(entry, self.events_path, self.project_root, config)
+        # age_factor should be 0.0 (not crash)
+        self.assertEqual(score.breakdown.age_factor, 0.0)
+
+    def test_no_sources_low_quality(self):
+        """Entry with empty source list gets 0 source quality."""
+        config = _make_config()
+        entry = _make_entry(
+            id="lesson-nosrc-11111111",
+            created_at=_now_iso(),
+            source=[],
+        )
+        score = calculate_confidence(entry, self.events_path, self.project_root, config)
+        self.assertEqual(score.breakdown.source_quality, 0.0)
+
+    def test_non_list_sources_handled(self):
+        """Entry with sources as string (not list) should not crash."""
+        config = _make_config()
+        entry = _make_entry(
+            id="lesson-strsrc-11111111",
+            created_at=_now_iso(),
+            source="not-a-list",
+        )
+        score = calculate_confidence(entry, self.events_path, self.project_root, config)
+        self.assertGreaterEqual(score.score, 0.0)
+        self.assertLessEqual(score.score, 1.0)
+
+
+class TestFindDuplicatesPreloaded(unittest.TestCase):
+
+    def test_preloaded_entries_used(self):
+        """_preloaded_entries should be used instead of reading from file."""
+        events_path = Path(tempfile.mkdtemp()) / "events.jsonl"
+        events_path.write_text("")  # Empty file
+
+        # Pass entries directly via _preloaded_entries
+        preloaded = {
+            "lesson-pre1-11111111": _make_entry(
+                id="lesson-pre1-11111111",
+                title="Exact same title for preload test",
+                rule="Same rule",
+            ),
+            "lesson-pre2-22222222": _make_entry(
+                id="lesson-pre2-22222222",
+                title="Exact same title for preload test",
+                rule="Same rule",
+            ),
+        }
+        config = _make_config()
+        report = find_duplicates(
+            events_path, config, _preloaded_entries=preloaded
+        )
+        # Should find duplicates from preloaded data, not from empty file
+        self.assertGreater(len(report.groups), 0)
+
+
+class TestBuildEvolutionReportDeprecated(unittest.TestCase):
+
+    def test_deprecated_entries_counted(self):
+        tmpdir = Path(tempfile.mkdtemp())
+        events_path = tmpdir / "events.jsonl"
+        entries = [
+            _make_entry(id="lesson-act-11111111", created_at=_now_iso(), source=["PR #1"]),
+            _make_entry(id="lesson-dep-22222222", created_at=_now_iso(), source=["PR #2"], deprecated=True),
+        ]
+        _write_events(events_path, entries)
+        config = _make_config()
+        report = build_evolution_report(events_path, config, tmpdir)
+        self.assertEqual(report.total_entries, 2)
+        self.assertEqual(report.active_entries, 1)
+        self.assertEqual(report.deprecated_entries, 1)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -354,5 +354,48 @@ class TestReviewDrafts(unittest.TestCase):
         self.assertGreaterEqual(report.invalid_drafts, 1)
 
 
+class TestApproveEmptyMeta(unittest.TestCase):
+
+    def setUp(self):
+        self.tmpdir = Path(tempfile.mkdtemp())
+        self.events_path = self.tmpdir / "events.jsonl"
+        self.events_path.write_text("")
+        self.drafts_dir = self.tmpdir / "drafts"
+
+    def test_empty_meta_removed_from_approved_entry(self):
+        """After stripping draft fields, if _meta is empty, it should be deleted."""
+        entry = _make_valid_entry()
+        info = create_draft(entry, self.drafts_dir)
+        result = approve_draft(info.path, self.events_path)
+        self.assertTrue(result.success)
+
+        lines = self.events_path.read_text().strip().split("\n")
+        saved = json.loads(lines[0])
+        self.assertNotIn("_meta", saved)
+
+
+class TestCreateDraftCollision(unittest.TestCase):
+
+    def test_collision_appends_counter(self):
+        drafts_dir = Path(tempfile.mkdtemp()) / "drafts"
+        entry = _make_valid_entry()
+        info1 = create_draft(entry, drafts_dir)
+        info2 = create_draft(entry, drafts_dir)
+        self.assertNotEqual(info1.filename, info2.filename)
+        self.assertTrue(info1.path.exists())
+        self.assertTrue(info2.path.exists())
+
+
+class TestCreateDraftDeepCopy(unittest.TestCase):
+
+    def test_original_entry_not_mutated(self):
+        drafts_dir = Path(tempfile.mkdtemp()) / "drafts"
+        entry = _make_valid_entry()
+        original_keys = set(entry.get("_meta", {}).keys())
+        create_draft(entry, drafts_dir)
+        after_keys = set(entry.get("_meta", {}).keys())
+        self.assertEqual(original_keys, after_keys)
+
+
 if __name__ == "__main__":
     unittest.main()

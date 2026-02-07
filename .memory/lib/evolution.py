@@ -262,6 +262,8 @@ def calculate_confidence(
             pass
 
     if ref_date is not None:
+        if ref_date.tzinfo is None:
+            ref_date = ref_date.replace(tzinfo=timezone.utc)
         now = datetime.now(timezone.utc)
         days_old = max(0, (now - ref_date).days)
         # Exponential decay: 2^(-days/half_life)
@@ -276,6 +278,8 @@ def calculate_confidence(
     if last_verified:
         try:
             verified_dt = _parse_iso8601(str(last_verified))
+            if verified_dt.tzinfo is None:
+                verified_dt = verified_dt.replace(tzinfo=timezone.utc)
             days_since_verified = max(0, (datetime.now(timezone.utc) - verified_dt).days)
             if days_since_verified <= 30:
                 verification_boost = 1.0
@@ -356,6 +360,7 @@ def find_duplicates(
     config: dict,
     vectordb=None,
     embedder=None,
+    _preloaded_entries: Optional[Dict[str, dict]] = None,
 ) -> DuplicateReport:
     """
     Find clusters of duplicate or near-duplicate entries.
@@ -370,8 +375,12 @@ def find_duplicates(
     Entries are grouped into clusters using union-find.
 
     Skips deprecated entries.
+
+    Args:
+        _preloaded_entries: Optional pre-loaded entries dict to avoid
+            re-reading events.jsonl (used by build_evolution_report).
     """
-    t0 = time.time()
+    t0 = time.monotonic()
 
     # Thresholds
     auto_config = config.get("automation", {})
@@ -379,8 +388,8 @@ def find_duplicates(
     text_threshold = auto_config.get("dedup_threshold", 0.85)
     embedding_threshold = embed_config.get("dedup_threshold", 0.92)
 
-    # Load entries
-    all_entries = _load_entries_latest_wins(events_path)
+    # Load entries (or use preloaded)
+    all_entries = _preloaded_entries if _preloaded_entries is not None else _load_entries_latest_wins(events_path)
     total_entries = len(all_entries)
 
     # Filter active (non-deprecated)
@@ -398,7 +407,7 @@ def find_duplicates(
             mode="text",
             text_threshold=text_threshold,
             embedding_threshold=embedding_threshold,
-            duration_ms=(time.time() - t0) * 1000,
+            duration_ms=(time.monotonic() - t0) * 1000,
         )
 
     # Build dedup texts
@@ -407,14 +416,17 @@ def find_duplicates(
     }
     entry_ids = list(active.keys())
 
-    # Stage 1: Text similarity (O(n^2))
+    # Stage 1: Text similarity (O(n^2) with quick_ratio pre-filter for large sets)
     candidate_pairs: List[Tuple[str, str, float]] = []
+    use_prefilter = len(entry_ids) > 100
     for i in range(len(entry_ids)):
         for j in range(i + 1, len(entry_ids)):
             id_a, id_b = entry_ids[i], entry_ids[j]
-            ratio = difflib.SequenceMatcher(
-                None, texts[id_a], texts[id_b]
-            ).ratio()
+            sm = difflib.SequenceMatcher(None, texts[id_a], texts[id_b])
+            # For large sets, use quick_ratio as a cheap upper-bound filter
+            if use_prefilter and sm.quick_ratio() < text_threshold:
+                continue
+            ratio = sm.ratio()
             if ratio >= text_threshold:
                 candidate_pairs.append((id_a, id_b, ratio))
 
@@ -448,7 +460,7 @@ def find_duplicates(
             mode=mode,
             text_threshold=text_threshold,
             embedding_threshold=embedding_threshold,
-            duration_ms=(time.time() - t0) * 1000,
+            duration_ms=(time.monotonic() - t0) * 1000,
         )
 
     # Cluster with union-find
@@ -496,7 +508,7 @@ def find_duplicates(
         mode=mode,
         text_threshold=text_threshold,
         embedding_threshold=embedding_threshold,
-        duration_ms=(time.time() - t0) * 1000,
+        duration_ms=(time.monotonic() - t0) * 1000,
     )
 
 
@@ -545,6 +557,9 @@ def _rank_entries_for_merge(
     3. More recently verified
     4. Older entry (established knowledge)
     """
+    if not entry_ids:
+        return []
+
     def sort_key(eid: str):
         e = entries.get(eid, {})
         severity = e.get("severity")
@@ -636,6 +651,7 @@ def suggest_deprecations(
     config: dict,
     project_root: Path,
     confidence_cache: Optional[Dict[str, ConfidenceScore]] = None,
+    _preloaded_entries: Optional[Dict[str, dict]] = None,
 ) -> DeprecationReport:
     """
     Identify entries that should be deprecated or re-verified.
@@ -649,15 +665,19 @@ def suggest_deprecations(
     Suggested actions:
     - "deprecate": low confidence AND sources invalid
     - "reverify": stale but sources may still exist
+
+    Args:
+        _preloaded_entries: Optional pre-loaded entries dict to avoid
+            re-reading events.jsonl (used by build_evolution_report).
     """
-    t0 = time.time()
+    t0 = time.monotonic()
     evo_config = _get_evolution_config(config)
     dep_threshold = evo_config.get(
         "deprecation_confidence_threshold", _DEFAULT_DEPRECATION_THRESHOLD
     )
     staleness_threshold = config.get("verify", {}).get("staleness_threshold_days", 90)
 
-    entries = _load_entries_latest_wins(events_path)
+    entries = _preloaded_entries if _preloaded_entries is not None else _load_entries_latest_wins(events_path)
     active = {
         eid: e for eid, e in entries.items()
         if not e.get("deprecated", False)
@@ -748,7 +768,7 @@ def suggest_deprecations(
     return DeprecationReport(
         total_entries=total_entries,
         candidates=candidates,
-        duration_ms=(time.time() - t0) * 1000,
+        duration_ms=(time.monotonic() - t0) * 1000,
     )
 
 
@@ -775,7 +795,7 @@ def build_evolution_report(
 
     Health score = mean of all entry confidence scores.
     """
-    t0 = time.time()
+    t0 = time.monotonic()
 
     # Load entries
     all_entries = _load_entries_latest_wins(events_path)
@@ -793,11 +813,11 @@ def build_evolution_report(
             total_entries=total_entries,
             active_entries=0,
             deprecated_entries=deprecated_count,
-            duration_ms=(time.time() - t0) * 1000,
+            duration_ms=(time.monotonic() - t0) * 1000,
         )
 
-    # 1. Duplicates
-    dup_report = find_duplicates(events_path, config, vectordb, embedder)
+    # 1. Duplicates (pass preloaded entries to avoid re-reading JSONL)
+    dup_report = find_duplicates(events_path, config, vectordb, embedder, _preloaded_entries=all_entries)
 
     # 2. Confidence scores
     confidence_scores: List[ConfidenceScore] = []
@@ -807,9 +827,10 @@ def build_evolution_report(
         confidence_scores.append(cs)
         confidence_cache[eid] = cs
 
-    # 3. Deprecation suggestions (pass cache to avoid recomputation)
+    # 3. Deprecation suggestions (pass cache + preloaded entries)
     dep_report = suggest_deprecations(
-        events_path, config, project_root, confidence_cache=confidence_cache
+        events_path, config, project_root, confidence_cache=confidence_cache,
+        _preloaded_entries=all_entries,
     )
 
     # 4. Merge suggestions
@@ -838,5 +859,5 @@ def build_evolution_report(
         entries_high_confidence=high,
         entries_medium_confidence=medium,
         entries_low_confidence=low,
-        duration_ms=(time.time() - t0) * 1000,
+        duration_ms=(time.monotonic() - t0) * 1000,
     )

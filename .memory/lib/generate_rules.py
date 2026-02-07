@@ -96,31 +96,50 @@ def extract_domain(entry: dict, domain_map: Optional[dict] = None) -> str:
         generic_tags = {"leakage", "bug", "fix", "test", "debug", "error"}
         for tag in tags:
             if tag and tag.lower() not in generic_tags:
-                return tag.lower().replace(" ", "-")
+                return _sanitize_domain(tag.lower().replace(" ", "-"))
 
     # Fall back to entry type
     entry_type = entry.get("type", "")
     if entry_type:
-        return entry_type
+        return _sanitize_domain(entry_type)
 
     return "general"
+
+
+def _sanitize_domain(name: str) -> str:
+    """
+    Sanitize a domain name for safe use as a filename.
+
+    Removes path separators and '..' to prevent path traversal.
+    Strips non-alphanumeric chars (except hyphens), collapses runs.
+    """
+    # Remove path separators and parent-dir references
+    name = name.replace("..", "").replace("/", "-").replace("\\", "-")
+    # Keep only alphanumeric and hyphens
+    name = re.sub(r"[^a-z0-9-]+", "-", name.lower())
+    # Collapse multiple hyphens and strip edges
+    name = re.sub(r"-+", "-", name).strip("-")
+    return name or "general"
 
 
 # ---------------------------------------------------------------------------
 # Entry loading and filtering
 # ---------------------------------------------------------------------------
 
-def _load_hard_entries(events_path: Path) -> List[dict]:
+def _load_hard_entries(events_path: Path) -> tuple[List[dict], int]:
     """
     Load Hard, non-deprecated entries from events.jsonl.
 
-    Returns entries sorted by severity (S1 first, then S2, S3, None).
+    Returns (hard_entries, total_scanned) where:
+    - hard_entries: sorted by severity (S1 first, then S2, S3, None)
+    - total_scanned: count of all unique entries resolved (latest-wins)
+
     Uses latest-wins semantics for duplicate entry IDs.
     """
     entries_by_id: Dict[str, dict] = {}
 
     if not events_path.exists():
-        return []
+        return [], 0
 
     with open(events_path, "r", encoding="utf-8") as f:
         for line in f:
@@ -135,6 +154,8 @@ def _load_hard_entries(events_path: Path) -> List[dict]:
             except json.JSONDecodeError:
                 continue
 
+    total_scanned = len(entries_by_id)
+
     # Filter: hard + not deprecated
     hard_entries = [
         e for e in entries_by_id.values()
@@ -147,7 +168,7 @@ def _load_hard_entries(events_path: Path) -> List[dict]:
         key=lambda e: severity_order.get(e.get("severity", ""), 99)
     )
 
-    return hard_entries
+    return hard_entries, total_scanned
 
 
 # ---------------------------------------------------------------------------
@@ -274,8 +295,8 @@ def generate_rule_files(
     report = GenerateReport(dry_run=dry_run)
 
     # Load and filter entries
-    hard_entries = _load_hard_entries(events_path)
-    report.entries_scanned = len(hard_entries)  # Will be updated below
+    hard_entries, total_scanned = _load_hard_entries(events_path)
+    report.entries_scanned = total_scanned
     report.entries_hard = len(hard_entries)
 
     if not hard_entries:

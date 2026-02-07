@@ -19,6 +19,7 @@ No external dependencies — pure Python stdlib + M1 lib modules.
 
 import json
 import logging
+import re
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -147,7 +148,7 @@ def _search_hybrid(
     """
     fetch_limit = max_results * 3  # Over-fetch for merging
 
-    # BM25 scores
+    # BM25 scores (already normalized relative to result set by search_fts)
     bm25_raw = vectordb.search_fts(query, limit=fetch_limit)
     bm25_map: Dict[str, float] = {eid: score for eid, score in bm25_raw}
 
@@ -157,10 +158,13 @@ def _search_hybrid(
     vec_raw = vectordb.search_vectors(
         query_result.vector, limit=fetch_limit, exclude_deprecated=True,
     )
+    # Normalize vector scores to [0, 1] relative to result set
     vec_map: Dict[str, float] = {}
-    for eid, sim in vec_raw:
-        # Normalize cosine sim from [-1, 1] to [0, 1]
-        vec_map[eid] = (sim + 1.0) / 2.0
+    if vec_raw:
+        raw_sims = [(eid, (sim + 1.0) / 2.0) for eid, sim in vec_raw]
+        max_vec = max(s for _, s in raw_sims) if raw_sims else 1.0
+        for eid, s in raw_sims:
+            vec_map[eid] = s / max_vec if max_vec > 0 else 0.0
 
     # Union of candidate IDs
     candidate_ids = set(bm25_map.keys()) | set(vec_map.keys())
@@ -290,8 +294,8 @@ def _search_basic(
     if not query.strip():
         return []
 
-    # Tokenize query (lowercase, split on whitespace and punctuation)
-    query_tokens = set(query.lower().split())
+    # Tokenize query (lowercase, split on non-word characters)
+    query_tokens = set(re.findall(r'\w+', query.lower()))
 
     results: List[SearchResult] = []
     for eid, entry in entries.items():
@@ -314,7 +318,7 @@ def _search_basic(
             text_parts.extend(tags)
 
         full_text = " ".join(text_parts).lower()
-        entry_tokens = set(full_text.split())
+        entry_tokens = set(re.findall(r'\w+', full_text))
 
         # Compute overlap ratio
         if not entry_tokens:
@@ -365,6 +369,15 @@ def _determine_mode(
     Returns: (mode, degraded, reason)
     """
     if force_mode:
+        # Validate that required components are available for the forced mode
+        has_embedder = embedder is not None
+        has_vectordb = vectordb is not None
+        if force_mode == "hybrid" and (not has_embedder or not has_vectordb):
+            return "basic", True, f"Cannot use hybrid mode: missing {'embedder' if not has_embedder else 'vectordb'}"
+        if force_mode == "vector" and (not has_embedder or not has_vectordb):
+            return "basic", True, f"Cannot use vector mode: missing {'embedder' if not has_embedder else 'vectordb'}"
+        if force_mode == "keyword" and not has_vectordb:
+            return "basic", True, "Cannot use keyword mode: missing vectordb"
         return force_mode, False, ""
 
     has_embedder = embedder is not None
@@ -392,7 +405,7 @@ def search_memory(
     embedder: Optional[EmbeddingProvider] = None,
     config: Optional[dict] = None,
     context: Optional[dict] = None,
-    max_results: int = 5,
+    max_results: Optional[int] = None,
     force_mode: Optional[str] = None,
 ) -> SearchReport:
     """
@@ -431,9 +444,9 @@ def search_memory(
         report.duration_ms = (time.monotonic() - start_time) * 1000
         return report
 
-    # Apply max_results from config if not overridden
+    # Apply max_results: caller override > config > default 5
     config_max = config.get("search", {}).get("max_results", 5)
-    effective_max = min(max_results, config_max) if max_results == 5 else max_results
+    effective_max = max_results if max_results is not None else config_max
 
     # Execute search based on mode
     try:

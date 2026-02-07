@@ -229,7 +229,7 @@ class TestCheckStartup(unittest.TestCase):
         )
         self.assertEqual(report.source_warnings, 1)
 
-    def test_hint_format_chinese(self):
+    def test_hint_format_with_drafts(self):
         entry = _make_valid_entry()
         create_draft(entry, self.drafts_dir)
         self.events_path.write_text("")
@@ -237,8 +237,8 @@ class TestCheckStartup(unittest.TestCase):
         report = check_startup(
             self.events_path, self.drafts_dir, self.tmpdir, self.config
         )
-        self.assertIn("\u53d1\u73b0", report.hint)
-        self.assertIn("\u5f85\u5ba1\u8bb0\u5fc6", report.hint)
+        self.assertIn("EF Memory", report.hint)
+        self.assertIn("pending drafts", report.hint)
 
     def test_hint_format_healthy(self):
         now = datetime.now(timezone.utc).isoformat()
@@ -302,10 +302,10 @@ class TestFormatHint(unittest.TestCase):
             total_entries=15,
         )
         hint = _format_hint(report)
-        self.assertIn("\u53d1\u73b0", hint)
-        self.assertIn("3", hint)
-        self.assertIn("1", hint)
-        self.assertIn("2", hint)
+        self.assertIn("EF Memory", hint)
+        self.assertIn("3 pending drafts", hint)
+        self.assertIn("1 source warnings", hint)
+        self.assertIn("2 stale entries", hint)
 
     def test_no_issues(self):
         report = StartupReport(total_entries=5)
@@ -316,8 +316,72 @@ class TestFormatHint(unittest.TestCase):
     def test_only_drafts(self):
         report = StartupReport(pending_drafts=2, total_entries=5)
         hint = _format_hint(report)
-        self.assertIn("\u5f85\u5ba1\u8bb0\u5fc6", hint)
+        self.assertIn("2 pending drafts", hint)
         self.assertNotIn("source", hint)
+
+
+class TestEvolutionStep(unittest.TestCase):
+
+    def setUp(self):
+        self.tmpdir = Path(tempfile.mkdtemp())
+        self.events_path = self.tmpdir / "events.jsonl"
+        self.config = _make_config()
+        self.config["evolution"] = {
+            "confidence_half_life_days": 120,
+            "deprecation_confidence_threshold": 0.3,
+        }
+
+    def test_evolution_step_runs(self):
+        now = datetime.now(timezone.utc).isoformat()
+        entry = _make_valid_entry(created_at=now, source=["PR #123"])
+        self.events_path.write_text(json.dumps(entry) + "\n")
+
+        report = run_pipeline(
+            self.events_path, self.config, self.tmpdir,
+            steps=["evolution_check"],
+        )
+        self.assertEqual(report.steps_run, 1)
+        result = report.step_results[0]
+        self.assertEqual(result.step, "evolution_check")
+        self.assertTrue(result.success)
+        self.assertIn("total_entries", result.details)
+
+    def test_evolution_step_empty_events(self):
+        self.events_path.write_text("")
+        report = run_pipeline(
+            self.events_path, self.config, self.tmpdir,
+            steps=["evolution_check"],
+        )
+        self.assertTrue(report.step_results[0].success)
+
+
+class TestStartupWithDeprecated(unittest.TestCase):
+
+    def test_deprecated_not_counted_in_total(self):
+        tmpdir = Path(tempfile.mkdtemp())
+        events_path = tmpdir / "events.jsonl"
+        drafts_dir = tmpdir / "drafts"
+        drafts_dir.mkdir()
+
+        now = datetime.now(timezone.utc).isoformat()
+        active = _make_valid_entry(
+            id="lesson-act-11111111",
+            created_at=now,
+            source=["PR #1"],
+        )
+        deprecated = _make_valid_entry(
+            id="lesson-dep-22222222",
+            created_at=now,
+            source=["PR #2"],
+            deprecated=True,
+        )
+        with open(events_path, "w") as f:
+            f.write(json.dumps(active) + "\n")
+            f.write(json.dumps(deprecated) + "\n")
+
+        config = _make_config()
+        report = check_startup(events_path, drafts_dir, tmpdir, config)
+        self.assertEqual(report.total_entries, 1)  # Only active
 
 
 if __name__ == "__main__":

@@ -134,6 +134,7 @@ def _run_sync_step(events_path: Path, config: dict) -> StepResult:
     """Run the sync_embeddings step."""
     result = StepResult(step="sync_embeddings")
 
+    db = None
     try:
         from .embedder import create_embedder
         from .sync import sync_embeddings
@@ -157,7 +158,7 @@ def _run_sync_step(events_path: Path, config: dict) -> StepResult:
         embedder = None
         if embedding_config.get("enabled", False):
             try:
-                embedder = create_embedder(config)
+                embedder = create_embedder(embedding_config)
             except Exception as e:
                 logger.warning(f"Embedder not available: {e}")
 
@@ -169,8 +170,6 @@ def _run_sync_step(events_path: Path, config: dict) -> StepResult:
             embedder=embedder,
             batch_size=batch_size,
         )
-
-        db.close()
 
         result.success = len(sync_report.errors) == 0
         result.details = {
@@ -187,6 +186,12 @@ def _run_sync_step(events_path: Path, config: dict) -> StepResult:
         result.success = False
         result.error = str(e)
         logger.error(f"sync_embeddings step failed: {e}")
+    finally:
+        if db is not None:
+            try:
+                db.close()
+            except Exception:
+                pass
 
     return result
 
@@ -343,15 +348,15 @@ def _format_hint(report: StartupReport) -> str:
     parts = []
 
     if report.pending_drafts > 0:
-        parts.append(f"{report.pending_drafts} \u6761\u5f85\u5ba1\u8bb0\u5fc6")
+        parts.append(f"{report.pending_drafts} pending drafts")
 
     if report.source_warnings > 0:
-        parts.append(f"{report.source_warnings} \u6761 source \u544a\u8b66")
+        parts.append(f"{report.source_warnings} source warnings")
 
     if report.stale_entries > 0:
-        parts.append(f"{report.stale_entries} \u6761\u8fc7\u671f (>90\u5929)")
+        parts.append(f"{report.stale_entries} stale entries (>90d)")
 
     if parts:
-        return f"\u53d1\u73b0 {' / '.join(parts)}"
+        return f"EF Memory: {' / '.join(parts)}"
     else:
         return f"EF Memory: {report.total_entries} entries, all healthy"

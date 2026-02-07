@@ -126,5 +126,78 @@ class TestSyncEmbeddings(unittest.TestCase):
         self.assertTrue(self.db.has_vector("lesson-new-12345678"))
 
 
+class TestSyncErrorPaths(unittest.TestCase):
+
+    def setUp(self):
+        self.tmpdir = tempfile.mkdtemp()
+        self.events_path = Path(self.tmpdir) / "events.jsonl"
+        self.db_path = Path(self.tmpdir) / "vectors.db"
+
+        with open(self.events_path, "w") as f:
+            for entry in SAMPLE_ENTRIES:
+                f.write(json.dumps(entry) + "\n")
+
+        self.db = VectorDB(self.db_path)
+        self.db.open()
+        self.db.ensure_schema()
+
+    def tearDown(self):
+        self.db.close()
+
+    def test_invalid_json_line_skipped(self):
+        """Invalid JSON lines should be skipped without crashing."""
+        with open(self.events_path, "a") as f:
+            f.write("THIS IS NOT JSON\n")
+            f.write(json.dumps({
+                "id": "lesson-new-12345678",
+                "type": "lesson",
+                "classification": "soft",
+                "title": "Valid entry after bad line",
+                "content": ["Test"],
+                "rule": "test rule",
+                "source": ["test.py:L1-L10"],
+                "tags": ["test"],
+                "created_at": "2026-02-06T10:00:00Z",
+                "deprecated": False,
+            }) + "\n")
+
+        report = sync_embeddings(
+            self.events_path, self.db, MockEmbedder(dimensions=8), force_full=True
+        )
+        self.assertGreater(report.entries_scanned, 0)
+        self.assertEqual(len(report.errors), 0)
+
+    def test_cursor_not_advanced_on_error(self):
+        """When embedding errors occur, cursor should NOT advance."""
+        class FailingEmbedder(MockEmbedder):
+            def embed_documents(self, texts):
+                raise RuntimeError("API error")
+
+        report = sync_embeddings(
+            self.events_path, self.db, FailingEmbedder(dimensions=8), force_full=True
+        )
+        self.assertGreater(len(report.errors), 0)
+        self.assertIsNone(self.db.get_sync_cursor())
+
+    def test_entries_updated_counter(self):
+        """Re-syncing with changed text should count as 'updated'."""
+        embedder = MockEmbedder(dimensions=8)
+        sync_embeddings(self.events_path, self.db, embedder, force_full=True)
+
+        modified = SAMPLE_ENTRIES[0].copy()
+        modified["title"] = "Completely different title for update test"
+        with open(self.events_path, "a") as f:
+            f.write(json.dumps(modified) + "\n")
+
+        report = sync_embeddings(self.events_path, self.db, embedder, force_full=True)
+        self.assertGreater(report.entries_updated, 0)
+
+    def test_duration_is_positive(self):
+        report = sync_embeddings(
+            self.events_path, self.db, MockEmbedder(dimensions=8), force_full=True
+        )
+        self.assertGreater(report.duration_ms, 0)
+
+
 if __name__ == "__main__":
     unittest.main()

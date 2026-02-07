@@ -104,9 +104,22 @@ class TestDetermineMode(unittest.TestCase):
         self.assertTrue(degraded)
 
     def test_force_mode(self):
+        """Force mode degrades when required components are missing."""
         mode, degraded, reason = _determine_mode(None, None, force_mode="keyword")
+        # keyword requires vectordb; without it, degrades to basic
+        self.assertEqual(mode, "basic")
+        self.assertTrue(degraded)
+        self.assertIn("missing", reason)
+
+    def test_force_mode_with_components(self):
+        """Force mode works when required components are available."""
+        db = VectorDB(Path(tempfile.mkdtemp()) / "test.db")
+        db.open()
+        db.ensure_schema()
+        mode, degraded, reason = _determine_mode(db, None, force_mode="keyword")
         self.assertEqual(mode, "keyword")
         self.assertFalse(degraded)
+        db.close()
 
 
 class TestComputeBoost(unittest.TestCase):
@@ -444,6 +457,85 @@ class TestContextSearch(SearchTestBase):
         )
         self.assertIsNotNone(report)
         self.assertEqual(report.mode, "hybrid")
+
+
+class TestForceModeDegradation(unittest.TestCase):
+
+    def test_force_hybrid_no_embedder(self):
+        db = VectorDB(Path(tempfile.mkdtemp()) / "test.db")
+        db.open()
+        db.ensure_schema()
+        mode, degraded, reason = _determine_mode(db, None, force_mode="hybrid")
+        self.assertEqual(mode, "basic")
+        self.assertTrue(degraded)
+        self.assertIn("embedder", reason)
+        db.close()
+
+    def test_force_hybrid_no_vectordb(self):
+        mode, degraded, reason = _determine_mode(None, MockEmbedder(), force_mode="hybrid")
+        self.assertEqual(mode, "basic")
+        self.assertTrue(degraded)
+
+    def test_force_vector_no_embedder(self):
+        db = VectorDB(Path(tempfile.mkdtemp()) / "test.db")
+        db.open()
+        db.ensure_schema()
+        mode, degraded, reason = _determine_mode(db, None, force_mode="vector")
+        self.assertEqual(mode, "basic")
+        self.assertTrue(degraded)
+        db.close()
+
+    def test_force_basic_always_works(self):
+        mode, degraded, reason = _determine_mode(None, None, force_mode="basic")
+        self.assertEqual(mode, "basic")
+        self.assertFalse(degraded)
+
+
+class TestDetermineModeVectorOnly(unittest.TestCase):
+
+    def test_vector_mode_when_fts_unavailable(self):
+        db = VectorDB(Path(tempfile.mkdtemp()) / "test.db")
+        db.open()
+        db.ensure_schema()
+        db._fts5_available = False
+        mode, degraded, reason = _determine_mode(db, MockEmbedder())
+        self.assertEqual(mode, "vector")
+        self.assertTrue(degraded)
+        db.close()
+
+
+class TestSearchExceptionFallback(SearchTestBase):
+
+    def test_hybrid_failure_falls_back_to_basic(self):
+        class BrokenEmbedder(MockEmbedder):
+            def embed_query(self, text):
+                raise RuntimeError("API error")
+
+        report = search_memory(
+            query="rolling",
+            events_path=self.events_path,
+            vectordb=self.db,
+            embedder=BrokenEmbedder(dimensions=8),
+            config=TEST_CONFIG,
+        )
+        self.assertEqual(report.mode, "basic")
+        self.assertTrue(report.degraded)
+        self.assertIn("fell back to basic", report.degradation_reason)
+
+
+class TestConfigMaxResults(SearchTestBase):
+
+    def test_config_max_results_used_when_no_caller_override(self):
+        config = dict(TEST_CONFIG)
+        config["search"] = {"max_results": 1}
+        report = search_memory(
+            query="leakage rolling shift",
+            events_path=self.events_path,
+            vectordb=self.db,
+            embedder=self.embedder,
+            config=config,
+        )
+        self.assertLessEqual(report.total_found, 1)
 
 
 if __name__ == "__main__":

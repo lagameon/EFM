@@ -135,6 +135,8 @@ class GeminiEmbedder(EmbeddingProvider):
         return self._dims
 
     def embed_documents(self, texts: List[str]) -> List[EmbeddingResult]:
+        if not texts:
+            return []
         result = self._client.models.embed_content(
             model=self._model,
             contents=texts,
@@ -223,7 +225,13 @@ class OpenAIEmbedder(EmbeddingProvider):
 
         self._client = OpenAI(api_key=resolved_key)
         self._model = model
-        self._dims = self.DIMENSIONS.get(model, 1536)
+        if model not in self.DIMENSIONS:
+            logger.warning(
+                f"Unknown OpenAI model '{model}' — dimensions will be "
+                f"inferred from first embedding call"
+            )
+        self._dims = self.DIMENSIONS.get(model, 0)  # 0 = infer on first call
+        self._dims_inferred = model in self.DIMENSIONS
 
     @property
     def provider_id(self) -> str:
@@ -237,27 +245,39 @@ class OpenAIEmbedder(EmbeddingProvider):
     def dimensions(self) -> int:
         return self._dims
 
+    def _maybe_infer_dims(self, vector: list) -> None:
+        """Infer dimensions from actual vector on first call if needed."""
+        if not self._dims_inferred:
+            self._dims = len(vector)
+            self._dims_inferred = True
+            logger.info(f"OpenAI model '{self._model}' inferred dimensions: {self._dims}")
+
     def embed_documents(self, texts: List[str]) -> List[EmbeddingResult]:
+        if not texts:
+            return []
         response = self._client.embeddings.create(
             model=self._model,
             input=texts,
         )
-        return [
-            EmbeddingResult(
+        results = []
+        for item in response.data:
+            self._maybe_infer_dims(item.embedding)
+            results.append(EmbeddingResult(
                 vector=item.embedding,
                 model=self._model,
                 dimensions=self._dims,
-            )
-            for item in response.data
-        ]
+            ))
+        return results
 
     def embed_query(self, text: str) -> EmbeddingResult:
         response = self._client.embeddings.create(
             model=self._model,
             input=text,
         )
+        vec = response.data[0].embedding
+        self._maybe_infer_dims(vec)
         return EmbeddingResult(
-            vector=response.data[0].embedding,
+            vector=vec,
             model=self._model,
             dimensions=self._dims,
         )
@@ -296,7 +316,13 @@ class OllamaEmbedder(EmbeddingProvider):
 
         self._client = ollama_sdk.Client(host=host)
         self._model = model
-        self._dims = self.DIMENSIONS.get(model, 768)
+        if model not in self.DIMENSIONS:
+            logger.warning(
+                f"Unknown Ollama model '{model}' — dimensions will be "
+                f"inferred from first embedding call"
+            )
+        self._dims = self.DIMENSIONS.get(model, 0)  # 0 = infer on first call
+        self._dims_inferred = model in self.DIMENSIONS
 
     @property
     def provider_id(self) -> str:
@@ -310,13 +336,24 @@ class OllamaEmbedder(EmbeddingProvider):
     def dimensions(self) -> int:
         return self._dims
 
+    def _maybe_infer_dims(self, vector: list) -> None:
+        """Infer dimensions from actual vector on first call if needed."""
+        if not self._dims_inferred:
+            self._dims = len(vector)
+            self._dims_inferred = True
+            logger.info(f"Ollama model '{self._model}' inferred dimensions: {self._dims}")
+
     def embed_documents(self, texts: List[str]) -> List[EmbeddingResult]:
+        if not texts:
+            return []
         results = []
         for text in texts:
             response = self._client.embed(model=self._model, input=text)
+            vec = response["embeddings"][0]
+            self._maybe_infer_dims(vec)
             results.append(
                 EmbeddingResult(
-                    vector=response["embeddings"][0],
+                    vector=vec,
                     model=self._model,
                     dimensions=self._dims,
                 )
@@ -325,8 +362,10 @@ class OllamaEmbedder(EmbeddingProvider):
 
     def embed_query(self, text: str) -> EmbeddingResult:
         response = self._client.embed(model=self._model, input=text)
+        vec = response["embeddings"][0]
+        self._maybe_infer_dims(vec)
         return EmbeddingResult(
-            vector=response["embeddings"][0],
+            vector=vec,
             model=self._model,
             dimensions=self._dims,
         )

@@ -571,5 +571,76 @@ class TestVerifyAllEntries(unittest.TestCase):
         self.assertEqual(report.entries_checked, 1)
 
 
+class TestParseIso8601Fallback(unittest.TestCase):
+    """Test _parse_iso8601 with various timestamp formats."""
+
+    def test_standard_z_suffix(self):
+        from lib.auto_verify import _parse_iso8601
+        dt = _parse_iso8601("2026-02-01T14:30:00Z")
+        self.assertEqual(dt.year, 2026)
+        self.assertEqual(dt.month, 2)
+
+    def test_offset_format(self):
+        from lib.auto_verify import _parse_iso8601
+        dt = _parse_iso8601("2026-02-01T14:30:00+00:00")
+        self.assertEqual(dt.year, 2026)
+
+    def test_naive_timestamp_no_tz(self):
+        """Naive timestamp (no Z, no offset) should still parse."""
+        from lib.auto_verify import _parse_iso8601
+        dt = _parse_iso8601("2026-02-01T14:30:00")
+        self.assertEqual(dt.year, 2026)
+
+    def test_invalid_raises(self):
+        from lib.auto_verify import _parse_iso8601
+        with self.assertRaises(ValueError):
+            _parse_iso8601("not-a-timestamp")
+
+
+class TestCheckStalenessEdgeCases(unittest.TestCase):
+    """Edge cases for check_staleness."""
+
+    def test_naive_datetime_timezone_guard(self):
+        """Entry with naive datetime (no Z) should not crash."""
+        entry = _make_valid_entry(created_at="2025-06-01T12:00:00")
+        result = check_staleness(entry, threshold_days=30)
+        # Should be stale (old date, no tz)
+        self.assertTrue(result.stale)
+
+    def test_unparseable_created_at_fallback(self):
+        """Entry with garbage created_at should default to 999 days."""
+        entry = _make_valid_entry(created_at="not-a-date")
+        result = check_staleness(entry, threshold_days=90)
+        self.assertTrue(result.stale)
+        self.assertEqual(result.days_since_created, 999)
+
+    def test_unparseable_last_verified_uses_created_at(self):
+        """If last_verified is garbage, fall back to created_at."""
+        entry = _make_valid_entry(
+            created_at=datetime.now(timezone.utc).isoformat(),
+            last_verified="garbage-date",
+        )
+        result = check_staleness(entry, threshold_days=90)
+        # Should use created_at (fresh) instead
+        self.assertFalse(result.stale)
+
+
+class TestVerifyEntryWithDestructiveCommand(unittest.TestCase):
+
+    def test_destructive_verify_cmd_overall_fail(self):
+        entry = _make_valid_entry(
+            created_at=datetime.now(timezone.utc).isoformat(),
+            verify="rm -rf /",
+        )
+        events_path = Path(tempfile.mkdtemp()) / "events.jsonl"
+        events_path.write_text("")
+        config = {
+            "verify": {"staleness_threshold_days": 90},
+            "automation": {"dedup_threshold": 0.85},
+        }
+        result = verify_entry(entry, events_path, events_path.parent, config)
+        self.assertEqual(result["overall"], "FAIL")
+
+
 if __name__ == "__main__":
     unittest.main()
