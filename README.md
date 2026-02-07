@@ -407,11 +407,57 @@ pip install ollama          # Ollama (local, free, requires ollama server)
 
 **2. Set API key** as environment variable:
 
+<details>
+<summary><strong>macOS / Linux</strong></summary>
+
 ```bash
+# Temporary (current session only)
 export GOOGLE_API_KEY="your-key"    # For Gemini
 export OPENAI_API_KEY="your-key"    # For OpenAI
-# Ollama needs no API key — just run: ollama pull nomic-embed-text
+
+# Persistent — add to your shell profile
+echo 'export GOOGLE_API_KEY="your-key"' >> ~/.zshrc    # macOS (zsh)
+echo 'export GOOGLE_API_KEY="your-key"' >> ~/.bashrc   # Linux (bash)
+source ~/.zshrc  # or ~/.bashrc — reload
 ```
+</details>
+
+<details>
+<summary><strong>Windows (PowerShell)</strong></summary>
+
+```powershell
+# Temporary (current session only)
+$env:GOOGLE_API_KEY = "your-key"
+$env:OPENAI_API_KEY = "your-key"
+
+# Persistent (user-level, survives reboot)
+[Environment]::SetEnvironmentVariable("GOOGLE_API_KEY", "your-key", "User")
+[Environment]::SetEnvironmentVariable("OPENAI_API_KEY", "your-key", "User")
+# Restart terminal to take effect
+```
+</details>
+
+<details>
+<summary><strong>Windows (CMD)</strong></summary>
+
+```cmd
+:: Temporary (current session only)
+set GOOGLE_API_KEY=your-key
+
+:: Persistent (user-level, survives reboot)
+setx GOOGLE_API_KEY "your-key"
+:: Restart terminal to take effect
+```
+</details>
+
+<details>
+<summary><strong>Ollama (local, no API key needed)</strong></summary>
+
+```bash
+# Install Ollama from https://ollama.com, then:
+ollama pull nomic-embed-text
+```
+</details>
 
 **3. Enable in config** — set `embedding.enabled` to `true` in `.memory/config.json`:
 
@@ -443,9 +489,16 @@ The system tries the primary provider first, then walks the fallback chain. If a
 
 To enable LLM-enriched reasoning (semantic correlations, deep contradiction analysis, principle synthesis):
 
-```bash
-export ANTHROPIC_API_KEY="your-key"   # or OPENAI_API_KEY / GOOGLE_API_KEY
-```
+Set the API key for your chosen provider (same method as above):
+
+| Provider | Env Variable | SDK |
+|----------|-------------|-----|
+| Anthropic Claude | `ANTHROPIC_API_KEY` | `pip install anthropic` |
+| OpenAI GPT | `OPENAI_API_KEY` | `pip install openai` |
+| Google Gemini | `GOOGLE_API_KEY` | `pip install google-genai` |
+| Ollama (local) | (none) | `pip install ollama` |
+
+Then enable in `.memory/config.json`:
 
 ```json
 "reasoning": {
