@@ -90,6 +90,8 @@ Hard+S1 entries get a +0.15 re-rank boost; the system always returns results reg
 
 ## Security Boundaries
 
+### When `human_review_required: true` (default)
+
 ```
 This system will NEVER:
   - Write files without explicit human request
@@ -104,6 +106,31 @@ This system will ALWAYS:
   - Report "No files were modified" after read-only operations
   - Distinguish between "checked" and "assumed" results
 ```
+
+### When `human_review_required: false`
+
+```
+/memory-save and /memory-import will:
+  - Validate schema and source before writing
+  - Directly append valid entries to events.jsonl
+  - Run the automation pipeline after writing
+  - Still NEVER invent sources or skip validation
+
+All other boundaries remain unchanged:
+  - /memory-verify still never executes commands
+  - /memory-search still returns max 5 entries
+  - Entries are still append-only
+```
+
+### How to toggle
+
+```json
+// In .memory/config.json → automation section:
+"human_review_required": true    // default — manual approval required
+"human_review_required": false   // auto-persist after validation
+```
+
+Or tell Claude: **"turn off memory review"** / **"turn on memory review"**
 
 **Critical Security Guarantee**: The `/memory-verify` command performs **static analysis only** on verify fields. It checks whether the command *looks* safe (read-only patterns, no dangerous commands) but **NEVER actually executes** the verify command. This is a hard security boundary that cannot be overridden.
 
@@ -335,6 +362,7 @@ cp archetypes/quant/memory.config.patch.json .memory/
   },
 
   "automation": {
+    "human_review_required": true,
     "startup_check": true,
     "pipeline_steps": ["sync_embeddings", "generate_rules"],
     "dedup_threshold": 0.85
@@ -461,11 +489,15 @@ Append a new version with the same `id`. The system uses append-only semantics �
 
 Hard entries are automatically injected into `.claude/rules/ef-memory/` (M3) so Claude loads them when editing relevant files.
 
-### 7. What documents can I import from?
+### 7. Can I skip the manual review step?
+
+**Yes.** Set `"human_review_required": false` in `.memory/config.json` under the `automation` section. When disabled, `/memory-save` and `/memory-import` will validate entries and write directly to `events.jsonl` without asking for confirmation. Schema validation and source checks still apply — only the human approval step is skipped. You can also tell Claude "turn off memory review" to toggle it.
+
+### 8. What documents can I import from?
 
 **Any structured document.** The system is document-type agnostic. You can import from incidents, decisions, architecture docs, runbooks, retrospectives, READMEs, code comments, changelogs, and any markdown file. Use `/memory-import <path>` with any file that contains extractable knowledge (rules, lessons, constraints, decisions, risks, or facts).
 
-### 8. Can I use this without Claude Code CLI?
+### 9. Can I use this without Claude Code CLI?
 
 The memory format (JSONL + SCHEMA.md) is tool-agnostic. The `.claude/commands/` files are specific to Claude Code CLI but the principles apply anywhere. The Python library modules can be used independently.
 

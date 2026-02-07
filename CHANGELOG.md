@@ -4,6 +4,26 @@ All notable changes to EF Memory for Claude will be documented in this file.
 
 ---
 
+## 2026-02-07 — Human Review Toggle
+
+### `human_review_required` config flag
+
+New toggle to control whether `/memory-save` and `/memory-import` require explicit human approval before writing to `events.jsonl`.
+
+**Modified files (5):**
+- `.memory/config.json` — Added `automation.human_review_required: true` (default)
+- `.memory/config.schema.json` — Added `human_review_required` schema definition
+- `.claude/commands/memory-save.md` — Added Human Review Mode section + conditional guardrails
+- `.claude/commands/memory-import.md` — Added Human Review Mode section + conditional guardrails (v1.2)
+- `README.md` — Updated Security Boundaries, config example, added FAQ
+
+**Behavior:**
+- `true` (default): Same as before — display only, require explicit user request to write
+- `false`: Validate schema + source, then directly append to `events.jsonl` and run pipeline
+- Toggle via config or natural language: "turn off memory review" / "turn on memory review"
+
+---
+
 ## 2026-02-07 — Universal Document Import
 
 ### `/memory-import` expanded to support any document type

@@ -72,6 +72,7 @@
   },
 
   "automation": {
+    "human_review_required": true,
     "startup_check": true,
     "pipeline_steps": ["sync_embeddings", "generate_rules"],
     "pipeline_after_approve": false,

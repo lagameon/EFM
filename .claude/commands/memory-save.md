@@ -5,7 +5,18 @@
 Persist decisions, lessons, constraints, or risks from the current task into project memory.
 All memory entries must be traceable to a concrete source and actionable.
 
-**This command does not write files by default unless explicitly allowed by Guardrails.**
+---
+
+## Human Review Mode
+
+**Check `.memory/config.json` → `automation.human_review_required`:**
+
+- **`true` (default)**: Display the MEMORY ENTRY in response only. Do NOT write to `events.jsonl` unless the user explicitly requests it (e.g., "write this to events.jsonl", "save it", "persist this entry").
+- **`false`**: After formatting and validating the entry, directly append to `events.jsonl` without asking for confirmation. Still validate schema and source — just skip the human approval step.
+
+**Users can toggle this at any time:**
+- To disable review: set `"human_review_required": false` in config, or tell Claude "turn off memory review" / "关闭记忆审核"
+- To re-enable: set `"human_review_required": true` in config, or tell Claude "turn on memory review" / "打开记忆审核"
 
 ---
 
@@ -152,16 +163,18 @@ Tags: <optional>
 **Notes:**
 - `Rule` and `Implication`: include at least one, preferably both
 - `Severity` and `Verify`: optional but recommended for S1/S2 entries
-- **Do not write files unless explicitly instructed by the user.**
+- **When `human_review_required: true`**: Do not write files unless explicitly instructed by the user.
+- **When `human_review_required: false`**: Validate the entry, then directly append to `events.jsonl` and run the automation pipeline.
 
 ---
 
 ## Guardrails
 
-- Obey `Side Effects & File Writes` rules from `CLAUDE.md`
+- **When `human_review_required: true`**: Obey `Side Effects & File Writes` rules from `CLAUDE.md`. Do not write files unless explicitly instructed.
+- **When `human_review_required: false`**: Validate schema and source, then write directly. Still never invent sources.
 - Never invent or guess a source
 - Never merge multiple concepts into one entry
-- If unsure whether something is worth saving, ask
+- If unsure whether something is worth saving, ask (regardless of review mode)
 - **If you cannot write a Rule or Implication, do not create the entry**
 
 ---

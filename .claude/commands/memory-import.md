@@ -2,11 +2,23 @@
 
 ## Purpose
 
-Extract memory candidates from **any structured project document** — incidents, decisions, architecture records, runbooks, retrospectives, README sections, code comments, and more — for human review.
+Extract memory candidates from **any structured project document** — incidents, decisions, architecture records, runbooks, retrospectives, README sections, code comments, and more.
 
 - **Input**: Any markdown document, code file, or structured text with extractable knowledge
-- **Output**: MEMORY ENTRY blocks in `/memory-save` format (displayed in response only)
-- **Guarantee**: This command NEVER writes files. Persistence is always a separate, explicit workflow.
+- **Output**: MEMORY ENTRY blocks in `/memory-save` format
+
+---
+
+## Human Review Mode
+
+**Check `.memory/config.json` → `automation.human_review_required`:**
+
+- **`true` (default)**: Display candidates in response only. Do NOT write to `events.jsonl`. User must explicitly review and persist via `/memory-save`.
+- **`false`**: After extracting and validating candidates, directly append all valid entries to `events.jsonl` and run the automation pipeline. Still validates schema and requires valid sources — just skips the manual approval step.
+
+**Users can toggle this at any time:**
+- To disable review: set `"human_review_required": false` in config, or tell Claude "turn off memory review"
+- To re-enable: set `"human_review_required": true` in config, or tell Claude "turn on memory review"
 
 ---
 
@@ -16,15 +28,15 @@ Extract memory candidates from **any structured project document** — incidents
 2. Claude identifies extractable knowledge (rules, lessons, constraints, decisions, risks, facts)
 3. Each candidate MUST have Rule or Implication (otherwise rejected)
 4. Source is normalized to the document's path + heading/line reference
-5. Human reviews, edits, and decides what to persist via `/memory-save`
+5. **When `human_review_required: true`**: Display candidates for human review → persist via `/memory-save`
+6. **When `human_review_required: false`**: Validate and directly append to `events.jsonl` → run pipeline
 
-## What /memory-import Does NOT Do
+## What /memory-import Does NOT Do (regardless of review mode)
 
-- ❌ Write to `events.jsonl` or any file
 - ❌ Maintain approval state or pending lists
 - ❌ Guarantee exact line numbers (best-effort only)
-- ❌ Deduplicate against existing memory
-- ❌ Auto-persist anything
+- ❌ Deduplicate against existing memory (check `/memory-search` first)
+- ❌ Create entries without valid sources or without Rule/Implication
 
 ---
 
@@ -283,15 +295,30 @@ WARN if: Entry duplicates existing memory (suggest checking /memory-search first
 
 ## Guardrails
 
-### Hard Constraints
+### Hard Constraints (always apply, regardless of review mode)
+
+```
+- NEVER claim to maintain approval state or pending lists
+- NEVER invent line numbers; use anchor-only format if uncertain
+- NEVER create entries without valid source and Rule/Implication
+- ALWAYS validate schema before persisting
+```
+
+### When `human_review_required: true` (default)
 
 ```
 - NEVER write to events.jsonl or any file
-- NEVER claim to maintain approval state or pending lists
-- NEVER invent line numbers; use anchor-only format if uncertain
-- NEVER auto-persist extracted entries
 - ALWAYS display "No files have been modified" at end of output
 - ALWAYS require human to explicitly request persistence
+```
+
+### When `human_review_required: false`
+
+```
+- Validate all entries, then directly append to events.jsonl
+- Display summary of what was written (entry count, titles)
+- Run automation pipeline after writing (sync + rules)
+- Still NEVER invent sources or create entries without Rule/Implication
 ```
 
 ---
@@ -302,3 +329,4 @@ WARN if: Entry duplicates existing memory (suggest checking /memory-search first
 |---------|------|-------|
 | 1.0 | 2026-02-01 | Initial design, INCIDENTS.md support, read-only |
 | 1.1 | 2026-02-07 | Universal document support, any markdown/code/config |
+| 1.2 | 2026-02-07 | Human review toggle (`human_review_required` config flag) |

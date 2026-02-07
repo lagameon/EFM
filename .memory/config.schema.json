@@ -213,6 +213,11 @@
       "type": "object",
       "description": "M4 Automation Engine configuration",
       "properties": {
+        "human_review_required": {
+          "type": "boolean",
+          "default": true,
+          "description": "When true (default), /memory-save and /memory-import require explicit human approval before writing to events.jsonl. When false, Claude may directly write entries after extraction — still validates schema, but skips the confirmation step. Toggle via config or tell Claude: 'turn off memory review'."
+        },
         "startup_check": {
           "type": "boolean",
           "default": true,
