@@ -353,15 +353,18 @@ def get_session_status(working_dir: Path) -> SessionStatus:
     task_desc = _extract_field(plan_content, "Task")
     phases_total, phases_done = _count_phases(plan_content)
 
-    # Count findings
+    # Count findings (only in "Session Discoveries" section, not prefill)
     findings_count = 0
     findings_path = working_dir / FINDINGS_FILE
     if findings_path.exists():
         content = findings_path.read_text()
-        findings_count = len([
-            l for l in content.splitlines()
-            if l.strip() and not l.strip().startswith("#") and not l.strip().startswith("---")
-        ])
+        in_discoveries = False
+        for line in content.splitlines():
+            if "Session Discoveries" in line:
+                in_discoveries = True
+                continue
+            if in_discoveries and line.strip() and not line.strip().startswith("("):
+                findings_count += 1
 
     # Count progress lines
     progress_lines = 0
@@ -413,16 +416,19 @@ def harvest_session(
     findings_path = working_dir / FINDINGS_FILE
     progress_path = working_dir / PROGRESS_FILE
 
+    # Track seen titles across all files to avoid cross-file duplicates
+    seen_titles: set = set()
+
     if findings_path.exists():
         findings_content = findings_path.read_text()
         report.findings_scanned = True
-        candidates = _extract_candidates(findings_content, str(findings_path))
+        candidates = _extract_candidates(findings_content, str(findings_path), seen_titles)
         report.candidates.extend(candidates)
 
     if progress_path.exists():
         progress_content = progress_path.read_text()
         report.progress_scanned = True
-        candidates = _extract_candidates(progress_content, str(progress_path))
+        candidates = _extract_candidates(progress_content, str(progress_path), seen_titles)
         report.candidates.extend(candidates)
 
     report.duration_ms = (time.monotonic() - start_time) * 1000
@@ -512,10 +518,23 @@ def _search_for_prefill(
 # Harvest extraction helpers
 # ---------------------------------------------------------------------------
 
-def _extract_candidates(text: str, source_hint: str) -> List[HarvestCandidate]:
-    """Extract memory candidates from text using pattern matching."""
+def _extract_candidates(
+    text: str,
+    source_hint: str,
+    seen_titles: Optional[set] = None,
+) -> List[HarvestCandidate]:
+    """Extract memory candidates from text using pattern matching.
+
+    Args:
+        text: Text content to scan for patterns.
+        source_hint: Source file path for candidate attribution.
+        seen_titles: Optional shared set for cross-file deduplication.
+            If provided, titles already in the set are skipped, and
+            new titles are added to it.
+    """
     candidates = []
-    seen_titles = set()
+    if seen_titles is None:
+        seen_titles = set()
 
     # Pattern 1: Explicit LESSON: markers
     for match in _LESSON_PATTERN.finditer(text):
@@ -636,9 +655,8 @@ def _count_phases(plan_text: str) -> Tuple[int, int]:
             break  # Next section
         if in_phases and line.strip().startswith("### Phase"):
             total += 1
-            # Check if all checkboxes in this phase are done
-            # We'll do a simple heuristic: phase header contains [DONE]
-            if "[DONE]" in line or "[done]" in line or "[x]" in line.lower():
+            # Phase is done when header contains [DONE] marker
+            if "[DONE]" in line or "[done]" in line:
                 done += 1
     return total, done
 

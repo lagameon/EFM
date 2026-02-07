@@ -342,6 +342,21 @@ class TestGetSessionStatus(unittest.TestCase):
         self.assertNotEqual(status.created_at, "")
         self.assertNotEqual(status.last_modified, "")
 
+    def test_findings_count_excludes_prefill(self):
+        """findings_count should only count Session Discoveries, not pre-loaded context."""
+        start_session("leakage shift", self.events_path, self.working_dir, self.config)
+
+        # Session starts with prefill; add one discovery
+        findings_path = self.working_dir / FINDINGS_FILE
+        content = findings_path.read_text()
+        content += "\nMy new discovery here\n"
+        findings_path.write_text(content)
+
+        status = get_session_status(self.working_dir)
+        # Should count only the discovery, not the prefill entries
+        self.assertLessEqual(status.findings_count, 3,
+            "findings_count should NOT include pre-loaded context entries")
+
 
 # ===========================================================================
 # Test: harvest_session
@@ -446,6 +461,21 @@ class TestHarvestSession(unittest.TestCase):
         report = harvest_session(self.working_dir, self.events_path, self.config)
         titles = [c.title for c in report.candidates if "prepared" in c.title]
         self.assertEqual(len(titles), 1)
+
+    def test_harvest_cross_file_dedup(self):
+        """Same candidate in both findings and progress should appear only once."""
+        start_session("test", self.events_path, self.working_dir, self.config)
+
+        # Add same lesson to BOTH files
+        lesson = "\n\nLESSON: Cross-file dedup test candidate\n"
+        findings_path = self.working_dir / FINDINGS_FILE
+        findings_path.write_text(findings_path.read_text() + lesson)
+        progress_path = self.working_dir / PROGRESS_FILE
+        progress_path.write_text(progress_path.read_text() + lesson)
+
+        report = harvest_session(self.working_dir, self.events_path, self.config)
+        matches = [c for c in report.candidates if "Cross-file dedup" in c.title]
+        self.assertEqual(len(matches), 1, "Cross-file duplicate not deduplicated")
 
     def test_duration_tracked(self):
         start_session("test", self.events_path, self.working_dir, self.config)

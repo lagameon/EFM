@@ -227,6 +227,20 @@ class TestSessionRecovery(unittest.TestCase):
         report = check_startup(self.events_path, self.drafts_dir, self.project, self.config)
         self.assertLess(report.duration_ms, 200)
 
+    def test_session_recovery_disabled(self):
+        """When session_recovery=False, startup should NOT detect active sessions."""
+        wm_config = _make_config()
+        start_session("test task", self.events_path, self.working_dir, wm_config)
+
+        config = _make_config(v3={
+            "auto_startup": True,
+            "working_memory_dir": ".memory/working",
+            "session_recovery": False,
+        })
+        report = check_startup(self.events_path, self.drafts_dir, self.project, config)
+        self.assertFalse(report.active_session)
+        self.assertNotIn("active session", report.hint)
+
 
 # ===========================================================================
 # Test: _count_candidate_types
@@ -313,8 +327,37 @@ class TestFormatHintV3(unittest.TestCase):
         )
         hint = _format_hint(report)
         self.assertIn("3 stale entries", hint)
+        self.assertIn(">90d", hint)  # default threshold
         self.assertIn("1 source warnings", hint)
         self.assertNotIn("active session", hint)
+
+    def test_stale_entries_custom_threshold(self):
+        """Hint should use the actual staleness threshold, not hardcoded 90d."""
+        report = StartupReport(
+            total_entries=10,
+            stale_entries=2,
+            staleness_threshold_days=60,
+        )
+        hint = _format_hint(report)
+        self.assertIn(">60d", hint)
+        self.assertNotIn(">90d", hint)
+
+    def test_all_fields_in_hint(self):
+        """Hint should render correctly with all issue types + session active."""
+        report = StartupReport(
+            total_entries=100,
+            active_session=True,
+            active_session_task="Refactor",
+            active_session_phases="1/3 done",
+            pending_drafts=3,
+            source_warnings=2,
+            stale_entries=1,
+        )
+        hint = _format_hint(report)
+        self.assertIn("active session", hint)
+        self.assertIn("3 pending drafts", hint)
+        self.assertIn("2 source warnings", hint)
+        self.assertIn("1 stale entries", hint)
 
 
 # ===========================================================================
@@ -328,6 +371,7 @@ class TestStartupReportV3(unittest.TestCase):
         self.assertFalse(report.active_session)
         self.assertEqual(report.active_session_task, "")
         self.assertEqual(report.active_session_phases, "")
+        self.assertEqual(report.staleness_threshold_days, 90)
 
     def test_with_session_fields(self):
         report = StartupReport(

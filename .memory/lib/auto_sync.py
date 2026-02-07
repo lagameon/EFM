@@ -71,6 +71,7 @@ class StartupReport:
     active_session: bool = False
     active_session_task: str = ""
     active_session_phases: str = ""       # e.g., "1/3 done"
+    staleness_threshold_days: int = 90    # Used in hint formatting
     hint: str = ""
     duration_ms: float = 0.0
 
@@ -416,6 +417,7 @@ def check_startup(
     report.total_entries = len(active_entries)
 
     threshold = config.get("verify", {}).get("staleness_threshold_days", 90)
+    report.staleness_threshold_days = threshold
     for entry in active_entries.values():
         staleness = check_staleness(entry, threshold)
         if staleness.stale:
@@ -446,9 +448,12 @@ def check_startup(
 
     # 4. Session recovery — detect active working memory session
     try:
+        v3_config = config.get("v3", {})
+        if not v3_config.get("session_recovery", True):
+            raise RuntimeError("session_recovery disabled")  # Skip to except
+
         from .working_memory import get_session_status as _get_wm_status
 
-        v3_config = config.get("v3", {})
         working_dir_rel = v3_config.get("working_memory_dir", ".memory/working")
         working_dir = project_root / working_dir_rel
         wm_status = _get_wm_status(working_dir)
@@ -484,7 +489,7 @@ def _format_hint(report: StartupReport) -> str:
         parts.append(f"{report.source_warnings} source warnings")
 
     if report.stale_entries > 0:
-        parts.append(f"{report.stale_entries} stale entries (>90d)")
+        parts.append(f"{report.stale_entries} stale entries (>{report.staleness_threshold_days}d)")
 
     if parts:
         return f"EF Memory: {' / '.join(parts)}"
