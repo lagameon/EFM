@@ -400,7 +400,7 @@ By default, embedding is disabled and search uses keyword-only mode (FTS5). To e
 **1. Install a provider SDK** (pick one):
 
 ```bash
-pip install google-genai    # Gemini (recommended — free tier, 768d)
+pip install google-genai    # Gemini (recommended — free tier, 3072d)
 pip install openai          # OpenAI (1536d)
 pip install ollama          # Ollama (local, free, requires ollama server)
 ```
@@ -479,9 +479,11 @@ python3 .memory/scripts/pipeline_cli.py --sync-only
 
 | Provider | SDK | API Key Env | Model | Dimensions | Cost |
 |----------|-----|-------------|-------|------------|------|
-| **Gemini** | `google-genai` | `GOOGLE_API_KEY` | `gemini-embedding-001` | 768 | Free tier available |
+| **Gemini** | `google-genai` | `GOOGLE_API_KEY` | `gemini-embedding-001` | 3072 | Free tier available |
 | **OpenAI** | `openai` | `OPENAI_API_KEY` | `text-embedding-3-small` | 1536 | Paid |
 | **Ollama** | `ollama` | (none) | `nomic-embed-text` | 768 | Free (local) |
+
+> Gemini supports Matryoshka dimensionality reduction — set `"dimensions": 768` or `1536` in config to reduce storage at slight quality cost.
 
 The system tries the primary provider first, then walks the fallback chain. If all providers fail, it silently degrades to keyword-only mode.
 

@@ -9,7 +9,7 @@
     "providers": {
       "gemini": {
         "model": "gemini-embedding-001",
-        "dimensions": 768,
+        "dimensions": 3072,
         "api_key_env": "GOOGLE_API_KEY"
       },
       "openai": {

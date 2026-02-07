@@ -91,7 +91,7 @@ class GeminiEmbedder(EmbeddingProvider):
 
     Features:
     - Asymmetric task types (RETRIEVAL_DOCUMENT vs RETRIEVAL_QUERY)
-    - Matryoshka dimensions (768 recommended for EF Memory)
+    - Matryoshka dimensions (native 3072, reducible to 1536/768)
     - SEMANTIC_SIMILARITY task type for dedup
     """
 
@@ -99,7 +99,7 @@ class GeminiEmbedder(EmbeddingProvider):
         self,
         api_key: Optional[str] = None,
         model: str = "gemini-embedding-001",
-        dims: int = 768,
+        dims: int = 3072,
     ):
         try:
             from google import genai
@@ -379,7 +379,7 @@ _PROVIDER_CONSTRUCTORS = {
     "gemini": lambda cfg: GeminiEmbedder(
         api_key=_resolve_api_key(cfg),
         model=cfg.get("model", "gemini-embedding-001"),
-        dims=cfg.get("dimensions", 768),
+        dims=cfg.get("dimensions", 3072),
     ),
     "openai": lambda cfg: OpenAIEmbedder(
         api_key=_resolve_api_key(cfg),
