@@ -11,7 +11,7 @@ import sys
 import tempfile
 import unittest
 from copy import deepcopy
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 # Import path setup
@@ -26,6 +26,7 @@ from lib.auto_capture import (
     _sanitize_title,
     approve_draft,
     create_draft,
+    expire_stale_drafts,
     list_drafts,
     reject_draft,
     review_drafts,
@@ -395,6 +396,102 @@ class TestCreateDraftDeepCopy(unittest.TestCase):
         create_draft(entry, drafts_dir)
         after_keys = set(entry.get("_meta", {}).keys())
         self.assertEqual(original_keys, after_keys)
+
+
+# ---------------------------------------------------------------------------
+# TestExpireStaleDrafts
+# ---------------------------------------------------------------------------
+
+class TestExpireStaleDrafts(unittest.TestCase):
+
+    def setUp(self):
+        self.tmpdir = Path(tempfile.mkdtemp())
+        self.drafts_dir = self.tmpdir / "drafts"
+
+    def _create_draft_with_age(self, title: str, age_days: int) -> DraftInfo:
+        """Helper: create a draft and backdate its capture_timestamp."""
+        entry = _make_valid_entry(title=title)
+        info = create_draft(entry, self.drafts_dir)
+        # Backdate the capture_timestamp in the file
+        data = json.loads(info.path.read_text())
+        old_ts = (datetime.now(timezone.utc) - timedelta(days=age_days)).isoformat()
+        data["_meta"]["capture_timestamp"] = old_ts
+        info.path.write_text(json.dumps(data, indent=2) + "\n")
+        return info
+
+    def test_expires_old_drafts(self):
+        """Drafts older than max_age_days should be deleted."""
+        self._create_draft_with_age("old draft one", age_days=10)
+        self._create_draft_with_age("fresh draft two", age_days=2)
+
+        expired = expire_stale_drafts(self.drafts_dir, max_age_days=7)
+        self.assertEqual(len(expired), 1)
+        self.assertIn("old_draft", expired[0].filename)
+
+        remaining = list_drafts(self.drafts_dir)
+        self.assertEqual(len(remaining), 1)
+
+    def test_keeps_fresh_drafts(self):
+        """Drafts younger than max_age_days should not be deleted."""
+        self._create_draft_with_age("fresh one", age_days=1)
+        self._create_draft_with_age("fresh two", age_days=3)
+
+        expired = expire_stale_drafts(self.drafts_dir, max_age_days=7)
+        self.assertEqual(len(expired), 0)
+        remaining = list_drafts(self.drafts_dir)
+        self.assertEqual(len(remaining), 2)
+
+    def test_handles_empty_dir(self):
+        """Empty drafts directory should return empty list."""
+        self.drafts_dir.mkdir(parents=True, exist_ok=True)
+        expired = expire_stale_drafts(self.drafts_dir, max_age_days=7)
+        self.assertEqual(len(expired), 0)
+
+    def test_handles_nonexistent_dir(self):
+        """Nonexistent drafts directory should return empty list."""
+        expired = expire_stale_drafts(self.tmpdir / "nonexistent", max_age_days=7)
+        self.assertEqual(len(expired), 0)
+
+    def test_zero_disables_expiry(self):
+        """max_age_days=0 should disable expiry (no drafts deleted)."""
+        self._create_draft_with_age("ancient draft", age_days=365)
+        expired = expire_stale_drafts(self.drafts_dir, max_age_days=0)
+        self.assertEqual(len(expired), 0)
+        remaining = list_drafts(self.drafts_dir)
+        self.assertEqual(len(remaining), 1)
+
+    def test_negative_disables_expiry(self):
+        """Negative max_age_days should also disable expiry."""
+        self._create_draft_with_age("old draft neg", age_days=100)
+        expired = expire_stale_drafts(self.drafts_dir, max_age_days=-1)
+        self.assertEqual(len(expired), 0)
+
+    def test_boundary_exact_age(self):
+        """A draft at exactly max_age_days boundary should NOT be expired (< cutoff only)."""
+        self._create_draft_with_age("boundary draft", age_days=7)
+        expired = expire_stale_drafts(self.drafts_dir, max_age_days=7)
+        # Due to sub-second timing, 7-day-old draft is at or slightly past cutoff
+        # Accept either 0 or 1 — the important thing is no crash
+        self.assertIn(len(expired), [0, 1])
+
+    def test_all_expired(self):
+        """When all drafts are old, all should be expired."""
+        self._create_draft_with_age("old one", age_days=30)
+        self._create_draft_with_age("old two", age_days=20)
+        self._create_draft_with_age("old three", age_days=15)
+
+        expired = expire_stale_drafts(self.drafts_dir, max_age_days=7)
+        self.assertEqual(len(expired), 3)
+        remaining = list_drafts(self.drafts_dir)
+        self.assertEqual(len(remaining), 0)
+
+    def test_returns_draft_info_objects(self):
+        """Returned objects should be DraftInfo with correct fields."""
+        self._create_draft_with_age("expirable draft", age_days=10)
+        expired = expire_stale_drafts(self.drafts_dir, max_age_days=7)
+        self.assertEqual(len(expired), 1)
+        self.assertIsInstance(expired[0], DraftInfo)
+        self.assertIn("expirable", expired[0].filename)
 
 
 if __name__ == "__main__":

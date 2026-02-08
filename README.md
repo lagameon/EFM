@@ -431,6 +431,7 @@ reasoning_check  → Cross-memory correlation, contradiction detection, synthesi
     "auto_start_on_plan": true,            // Auto-start session on plan mode
     "auto_harvest_on_stop": true,          // Auto-harvest + persist on stop
     "auto_draft_from_conversation": true,  // Scan conversation → drafts on stop
+    "draft_auto_expire_days": 7,           // Auto-delete drafts older than N days (0=never)
     "session_recovery": true,              // Detect stale sessions at startup
     "prefill_on_plan_start": true,         // Prefill findings with EF Memory
     "max_prefill_entries": 5
@@ -780,7 +781,7 @@ Additional path keys (e.g., `FEATURE_ROOTS`, `DEPLOYMENT_ROOTS`) can be added fo
 │   ├── init_cli.py        #   V3: project init CLI
 │   ├── working_memory_cli.py  #  V3: working memory CLI
 │   └── compact_cli.py     #   V3: compaction CLI (--stats, --dry-run)
-└── tests/                 # 711 unit tests
+└── tests/                 # 731 unit tests
     ├── conftest.py
     ├── test_text_builder.py
     ├── test_vectordb.py
@@ -919,4 +920,4 @@ MIT — see [LICENSE](LICENSE).
 | Schema | 1.1 |
 | Config | 1.5 |
 | Commands | 1.3 (10 slash commands) |
-| V3 Engine | M11 (711 tests) |
+| V3 Engine | M11 (731 tests) |

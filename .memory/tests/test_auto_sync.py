@@ -25,7 +25,7 @@ from lib.auto_sync import (
     check_startup,
     run_pipeline,
 )
-from lib.auto_capture import create_draft
+from lib.auto_capture import create_draft, list_drafts
 
 
 # ---------------------------------------------------------------------------
@@ -318,6 +318,128 @@ class TestFormatHint(unittest.TestCase):
         hint = _format_hint(report)
         self.assertIn("2 pending drafts", hint)
         self.assertNotIn("source", hint)
+
+
+    def test_drafts_with_age(self):
+        report = StartupReport(
+            pending_drafts=4,
+            oldest_draft_age_days=3,
+            total_entries=5,
+        )
+        hint = _format_hint(report)
+        self.assertIn("4 pending drafts", hint)
+        self.assertIn("oldest: 3d", hint)
+        self.assertIn("/memory-save", hint)
+
+    def test_drafts_expired_with_remaining(self):
+        report = StartupReport(
+            pending_drafts=2,
+            drafts_expired=3,
+            oldest_draft_age_days=4,
+            total_entries=5,
+        )
+        hint = _format_hint(report)
+        self.assertIn("auto-expired 3 stale drafts", hint)
+        self.assertIn("2 pending", hint)
+        self.assertIn("/memory-save", hint)
+
+    def test_drafts_expired_none_remaining(self):
+        report = StartupReport(
+            pending_drafts=0,
+            drafts_expired=5,
+            total_entries=10,
+        )
+        hint = _format_hint(report)
+        self.assertIn("auto-expired 5 stale drafts", hint)
+        self.assertNotIn("pending", hint)
+
+    def test_fresh_drafts_no_age_suffix(self):
+        """When oldest_draft_age_days is 0, no age suffix should appear."""
+        report = StartupReport(
+            pending_drafts=1,
+            oldest_draft_age_days=0,
+            total_entries=5,
+        )
+        hint = _format_hint(report)
+        self.assertIn("1 pending drafts", hint)
+        self.assertNotIn("oldest", hint)
+        self.assertIn("/memory-save", hint)
+
+
+# ---------------------------------------------------------------------------
+# TestStartupDraftExpiry (integration)
+# ---------------------------------------------------------------------------
+
+class TestStartupDraftExpiry(unittest.TestCase):
+    """Integration tests for draft auto-expire during startup."""
+
+    def setUp(self):
+        self.tmpdir = Path(tempfile.mkdtemp())
+        self.events_path = self.tmpdir / "events.jsonl"
+        self.events_path.write_text("")
+        self.drafts_dir = self.tmpdir / "drafts"
+        self.config = _make_config()
+        self.config["v3"] = {"draft_auto_expire_days": 7}
+
+    def _create_aged_draft(self, title: str, age_days: int):
+        """Create a draft and backdate its timestamp."""
+        entry = _make_valid_entry(title=title)
+        info = create_draft(entry, self.drafts_dir)
+        data = json.loads(info.path.read_text())
+        old_ts = (
+            datetime.now(timezone.utc) - timedelta(days=age_days)
+        ).isoformat()
+        data["_meta"]["capture_timestamp"] = old_ts
+        info.path.write_text(json.dumps(data, indent=2) + "\n")
+
+    def test_startup_expires_old_drafts(self):
+        self._create_aged_draft("old draft expire", age_days=10)
+        self._create_aged_draft("fresh draft keep", age_days=2)
+
+        report = check_startup(
+            self.events_path, self.drafts_dir, self.tmpdir, self.config
+        )
+        self.assertEqual(report.drafts_expired, 1)
+        self.assertEqual(report.pending_drafts, 1)
+
+    def test_startup_reports_oldest_age(self):
+        self._create_aged_draft("three days old", age_days=3)
+        self._create_aged_draft("five days old", age_days=5)
+
+        report = check_startup(
+            self.events_path, self.drafts_dir, self.tmpdir, self.config
+        )
+        self.assertEqual(report.oldest_draft_age_days, 5)
+
+    def test_startup_hint_includes_expiry(self):
+        self._create_aged_draft("stale for test", age_days=14)
+        self._create_aged_draft("fresh for test", age_days=1)
+
+        report = check_startup(
+            self.events_path, self.drafts_dir, self.tmpdir, self.config
+        )
+        self.assertIn("auto-expired", report.hint)
+        self.assertIn("pending", report.hint)
+
+    def test_startup_no_expire_when_disabled(self):
+        self.config["v3"]["draft_auto_expire_days"] = 0
+        self._create_aged_draft("ancient draft disable", age_days=365)
+
+        report = check_startup(
+            self.events_path, self.drafts_dir, self.tmpdir, self.config
+        )
+        self.assertEqual(report.drafts_expired, 0)
+        self.assertEqual(report.pending_drafts, 1)
+
+    def test_startup_speed_with_expiry(self):
+        """Startup should still complete in <200ms with expiry enabled."""
+        for i in range(10):
+            self._create_aged_draft(f"speed draft {i}", age_days=i)
+
+        report = check_startup(
+            self.events_path, self.drafts_dir, self.tmpdir, self.config
+        )
+        self.assertLess(report.duration_ms, 200)
 
 
 class TestEvolutionStep(unittest.TestCase):

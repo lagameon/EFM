@@ -498,6 +498,13 @@
           "type": "boolean",
           "default": true,
           "description": "Scan conversation transcript for memory-worthy patterns (LESSON, CONSTRAINT, DECISION, etc.) on stop and create drafts in .memory/drafts/. Drafts require manual review via /memory-save. Only activates when no working memory session exists."
+        },
+        "draft_auto_expire_days": {
+          "type": "integer",
+          "default": 7,
+          "minimum": 0,
+          "maximum": 365,
+          "description": "Automatically delete drafts older than this many days during startup. Set to 0 to disable auto-expire (full manual control)."
         }
       }
     }

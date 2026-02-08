@@ -167,6 +167,7 @@
     "session_recovery": true,
     "auto_start_on_plan": true,
     "auto_harvest_on_stop": true,
-    "auto_draft_from_conversation": true
+    "auto_draft_from_conversation": true,
+    "draft_auto_expire_days": 7
   }
 }

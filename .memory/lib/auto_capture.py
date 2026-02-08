@@ -20,7 +20,7 @@ import logging
 import re
 import time
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import List, Optional
 
@@ -271,6 +271,42 @@ def reject_draft(draft_path: Path) -> bool:
     except OSError as e:
         logger.warning(f"Cannot delete draft: {e}")
         return False
+
+
+def expire_stale_drafts(drafts_dir: Path, max_age_days: int) -> List[DraftInfo]:
+    """
+    Delete drafts older than max_age_days.
+
+    Returns list of expired (deleted) DraftInfo objects.
+    Skips drafts without a parseable capture_timestamp.
+    If max_age_days <= 0, does nothing (returns []).
+    """
+    if max_age_days <= 0:
+        return []
+
+    expired: List[DraftInfo] = []
+    now = datetime.now(timezone.utc)
+    cutoff = now - timedelta(days=max_age_days)
+
+    drafts = list_drafts(drafts_dir)
+    for draft in drafts:
+        if not draft.capture_timestamp:
+            continue
+        try:
+            ts = datetime.fromisoformat(draft.capture_timestamp)
+            if ts.tzinfo is None:
+                ts = ts.replace(tzinfo=timezone.utc)
+        except (ValueError, TypeError):
+            logger.warning(
+                f"Cannot parse timestamp for draft {draft.filename}, skipping"
+            )
+            continue
+
+        if ts < cutoff:
+            if reject_draft(draft.path):
+                expired.append(draft)
+
+    return expired
 
 
 def review_drafts(

@@ -4,6 +4,22 @@ All notable changes to EF Memory for Claude will be documented in this file.
 
 ---
 
+## 2026-02-08 — Draft Auto-Expire
+
+### Stale Draft Auto-Cleanup
+
+Drafts from conversation scanning (M10) now auto-expire during startup. Stale drafts older than `v3.draft_auto_expire_days` (default 7) are deleted automatically. The startup hint now shows draft age and expiry info with `/memory-save` review suggestion.
+
+**Modified files (4):**
+- `.memory/lib/auto_capture.py` — Added `expire_stale_drafts()` function
+- `.memory/lib/auto_sync.py` — Enhanced `check_startup()` with draft expiry + age tracking; enhanced `_format_hint()` with expiry reporting and `/memory-save` suggestion
+- `.memory/config.json` — Added `v3.draft_auto_expire_days: 7`
+- `.memory/config.schema.json` — Added `draft_auto_expire_days` field schema
+
+**Test count: 713 → 731** (+18 tests: 9 expire + 4 hint format + 5 startup integration)
+
+---
+
 ## 2026-02-08 — V3 M11: events.jsonl Compaction + Time-Sharded Archive
 
 ### M11: Hot/Archive Compaction

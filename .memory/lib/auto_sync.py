@@ -25,7 +25,9 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, List, Optional
 
-from .auto_capture import list_drafts
+from datetime import datetime, timezone
+
+from .auto_capture import expire_stale_drafts, list_drafts
 from .auto_verify import (
     _load_entries_latest_wins,
     _parse_source_ref,
@@ -65,6 +67,8 @@ class PipelineReport:
 class StartupReport:
     """Report for the startup health check hint."""
     pending_drafts: int = 0
+    drafts_expired: int = 0
+    oldest_draft_age_days: int = 0
     stale_entries: int = 0
     source_warnings: int = 0
     total_entries: int = 0
@@ -403,10 +407,29 @@ def check_startup(
     report = StartupReport()
     start_time = time.monotonic()
 
-    # 1. Pending drafts
+    # 1. Auto-expire stale drafts, then count remaining
     try:
+        v3_config_drafts = config.get("v3", {})
+        expire_days = v3_config_drafts.get("draft_auto_expire_days", 7)
+        if expire_days > 0:
+            expired = expire_stale_drafts(drafts_dir, expire_days)
+            report.drafts_expired = len(expired)
+
         drafts = list_drafts(drafts_dir)
         report.pending_drafts = len(drafts)
+
+        # Calculate oldest draft age
+        if drafts:
+            now = datetime.now(timezone.utc)
+            oldest_ts = drafts[0].capture_timestamp  # sorted oldest-first
+            if oldest_ts:
+                try:
+                    ts = datetime.fromisoformat(oldest_ts)
+                    if ts.tzinfo is None:
+                        ts = ts.replace(tzinfo=timezone.utc)
+                    report.oldest_draft_age_days = (now - ts).days
+                except (ValueError, TypeError):
+                    pass
     except Exception:
         report.pending_drafts = 0
 
@@ -496,8 +519,16 @@ def _format_hint(report: StartupReport) -> str:
         task_preview = report.active_session_task[:50]
         parts.append(f"active session: \"{task_preview}\" ({report.active_session_phases})")
 
-    if report.pending_drafts > 0:
-        parts.append(f"{report.pending_drafts} pending drafts")
+    if report.drafts_expired > 0 and report.pending_drafts > 0:
+        parts.append(
+            f"auto-expired {report.drafts_expired} stale drafts, "
+            f"{report.pending_drafts} pending (oldest: {report.oldest_draft_age_days}d, review: /memory-save)"
+        )
+    elif report.drafts_expired > 0:
+        parts.append(f"auto-expired {report.drafts_expired} stale drafts")
+    elif report.pending_drafts > 0:
+        age_suffix = f" (oldest: {report.oldest_draft_age_days}d, review: /memory-save)" if report.oldest_draft_age_days > 0 else " (review: /memory-save)"
+        parts.append(f"{report.pending_drafts} pending drafts{age_suffix}")
 
     if report.source_warnings > 0:
         parts.append(f"{report.source_warnings} source warnings")
