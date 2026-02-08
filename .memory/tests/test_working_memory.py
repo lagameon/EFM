@@ -933,6 +933,104 @@ class TestAutoHarvestAndPersist(unittest.TestCase):
         )
         self.assertEqual(result["candidates_found"], 0)
 
+    def test_skips_duplicate_entries(self):
+        """Entries already in events.jsonl are skipped (not written again)."""
+        # Pre-populate events.jsonl with an entry that matches our harvest marker.
+        # _convert_candidate_to_entry for "LESSON: Always validate input..."
+        # produces title="Always validate input before processing", rule=None,
+        # source=[".memory/working/findings.md:L0-L0"].
+        # build_dedup_text uses: title | source, so the existing entry must
+        # have matching title and similar source for >0.85 similarity.
+        existing_entry = {
+            "id": "lesson-existing-aaaabbbb",
+            "type": "lesson",
+            "classification": "soft",
+            "severity": "S3",
+            "title": "Always validate input before processing",
+            "content": ["Validate all user input"],
+            "rule": None,
+            "source": [".memory/working/findings.md:L0-L0"],
+            "tags": ["validation"],
+            "created_at": "2026-02-01T00:00:00Z",
+            "deprecated": False,
+            "_meta": {},
+        }
+        self.events_path.write_text(
+            json.dumps(existing_entry) + "\n", encoding="utf-8"
+        )
+
+        # Session files contain the same knowledge
+        self._write_session_with_markers()
+
+        result = auto_harvest_and_persist(
+            self.working_dir, self.events_path,
+            self.project_root, self.config,
+            run_pipeline_after=False,
+        )
+
+        # Candidates found, but at least one should be skipped as duplicate
+        self.assertGreater(result["candidates_found"], 0)
+        self.assertGreater(result["entries_skipped"], 0)
+
+    def test_dedup_threshold_respected(self):
+        """Low dedup threshold catches more duplicates, high threshold catches fewer."""
+        # Pre-populate with an entry
+        existing_entry = {
+            "id": "constraint-existing-ccccdddd",
+            "type": "constraint",
+            "classification": "hard",
+            "severity": "S2",
+            "title": "MUST use shift(1) before rolling",
+            "content": ["Use shift(1) before rolling operations"],
+            "rule": "MUST use shift(1) before rolling",
+            "source": ["manual"],
+            "tags": ["shift", "rolling"],
+            "created_at": "2026-02-01T00:00:00Z",
+            "deprecated": False,
+            "_meta": {},
+        }
+        self.events_path.write_text(
+            json.dumps(existing_entry) + "\n", encoding="utf-8"
+        )
+
+        self._write_session_with_markers()
+
+        # With very low threshold (0.5) — more things are considered duplicates
+        config_low = {
+            "v3": {"working_memory_dir": ".memory/working"},
+            "automation": {"dedup_threshold": 0.5},
+        }
+        result_low = auto_harvest_and_persist(
+            self.working_dir, self.events_path,
+            self.project_root, config_low,
+            run_pipeline_after=False,
+        )
+
+        # Recreate session (cleared after harvest)
+        self._write_session_with_markers()
+        # Reset events to only the existing entry (remove appended entries from first run)
+        self.events_path.write_text(
+            json.dumps(existing_entry) + "\n", encoding="utf-8"
+        )
+
+        # With very high threshold (0.99) — almost nothing is a duplicate
+        config_high = {
+            "v3": {"working_memory_dir": ".memory/working"},
+            "automation": {"dedup_threshold": 0.99},
+        }
+        result_high = auto_harvest_and_persist(
+            self.working_dir, self.events_path,
+            self.project_root, config_high,
+            run_pipeline_after=False,
+        )
+
+        # Higher threshold should skip fewer entries
+        self.assertGreaterEqual(
+            result_low["entries_skipped"],
+            result_high["entries_skipped"],
+            "Lower dedup threshold should catch more duplicates"
+        )
+
 
 # ===========================================================================
 # Test: _extract_tags

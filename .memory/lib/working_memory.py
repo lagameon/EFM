@@ -789,22 +789,42 @@ def auto_harvest_and_persist(
         result["session_cleared"] = clear_session(working_dir)
         return result
 
-    # Step 2-3: Convert and validate
+    # Step 2-3: Convert, validate, and dedup against existing entries
+    from .auto_verify import validate_schema, check_duplicates, _load_entries_latest_wins
+
+    dedup_threshold = config.get("automation", {}).get("dedup_threshold", 0.85)
+    # Pre-load entries once to avoid re-reading events.jsonl per candidate
+    preloaded = _load_entries_latest_wins(events_path) if events_path.exists() else {}
+
     valid_entries = []
     for candidate in harvest_report.candidates:
         try:
             entry = _convert_candidate_to_entry(candidate, project_root)
-            # Basic validation
-            from .auto_verify import validate_schema
+            # Schema validation
             vr = validate_schema(entry)
-            if vr.valid:
-                valid_entries.append(entry)
-            else:
+            if not vr.valid:
                 result["entries_skipped"] += 1
                 logger.warning(
                     f"Skipped invalid entry '{candidate.title}': "
                     f"{[c.message for c in vr.checks if not c.passed]}"
                 )
+                continue
+
+            # Dedup check against existing events.jsonl
+            dedup = check_duplicates(
+                entry, events_path, dedup_threshold,
+                _preloaded_entries=preloaded,
+            )
+            if dedup.is_duplicate:
+                result["entries_skipped"] += 1
+                logger.info(
+                    f"Skipped duplicate entry '{candidate.title}': "
+                    f"similar to {dedup.similar_entries[0][0]} "
+                    f"({dedup.similar_entries[0][1]:.0%})"
+                )
+                continue
+
+            valid_entries.append(entry)
         except Exception as e:
             result["entries_skipped"] += 1
             result["errors"].append(f"Convert failed for '{candidate.title}': {e}")
