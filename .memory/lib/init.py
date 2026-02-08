@@ -185,6 +185,10 @@ def generate_hooks_settings() -> dict:
       - Stop: auto-harvest working session (M9) OR scan conversation → drafts (M10)
       - PreCompact: remind to save before compacting
     """
+    # Prefix hook commands with cd to git repo root so they work
+    # regardless of the current working directory (e.g. when Claude
+    # is editing files in a subdirectory like deployment/live_trading/).
+    _cd = 'cd "$(git rev-parse --show-toplevel)" && '
     return {
         "SessionStart": [
             {
@@ -192,7 +196,7 @@ def generate_hooks_settings() -> dict:
                 "hooks": [
                     {
                         "type": "command",
-                        "command": "bash .memory/hooks/session_start.sh",
+                        "command": f"{_cd}bash .memory/hooks/session_start.sh",
                         "timeout": 15,
                         "statusMessage": "EF Memory startup check",
                     }
@@ -205,7 +209,7 @@ def generate_hooks_settings() -> dict:
                 "hooks": [
                     {
                         "type": "command",
-                        "command": "python3 .memory/hooks/pre_edit_search.py",
+                        "command": f"{_cd}python3 .memory/hooks/pre_edit_search.py",
                         "timeout": 5,
                         "statusMessage": "EF Memory search",
                     }
@@ -216,7 +220,7 @@ def generate_hooks_settings() -> dict:
                 "hooks": [
                     {
                         "type": "command",
-                        "command": "python3 .memory/hooks/plan_start.py",
+                        "command": f"{_cd}python3 .memory/hooks/plan_start.py",
                         "timeout": 10,
                         "statusMessage": "EF Memory plan session",
                     }
@@ -229,7 +233,7 @@ def generate_hooks_settings() -> dict:
                 "hooks": [
                     {
                         "type": "command",
-                        "command": "python3 .memory/hooks/stop_harvest.py",
+                        "command": f"{_cd}python3 .memory/hooks/stop_harvest.py",
                         "timeout": 30,
                         "once": True,
                     }
@@ -302,19 +306,20 @@ def merge_settings_json(
             else:
                 # Check if EF Memory hooks already exist
                 # Match by .memory/hooks/ path OR [EF Memory] marker in command
-                existing_commands = set()
+                # Remove old EFM hooks and replace with new ones (handles
+                # upgrades, e.g. relative→absolute path prefix changes)
+                non_efm_groups = []
                 for group in settings["hooks"][event_name]:
+                    is_efm = False
                     for h in group.get("hooks", []):
                         cmd = h.get("command", "")
                         if ".memory/hooks/" in cmd or "[EF Memory]" in cmd:
-                            existing_commands.add(cmd)
-
-                for group in hook_groups:
-                    for h in group.get("hooks", []):
-                        cmd = h.get("command", "")
-                        if cmd not in existing_commands:
-                            settings["hooks"][event_name].append(group)
+                            is_efm = True
                             break
+                    if not is_efm:
+                        non_efm_groups.append(group)
+
+                settings["hooks"][event_name] = non_efm_groups + hook_groups
 
     return settings
 

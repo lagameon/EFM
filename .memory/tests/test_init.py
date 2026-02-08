@@ -375,6 +375,63 @@ class TestMergeSettingsJson(unittest.TestCase):
         result2 = merge_settings_json(result1)
         self.assertEqual(len(result2["hooks"]["PreCompact"]), 1)
 
+    def test_hooks_commands_have_cd_prefix(self):
+        """All .memory/hooks/ commands should cd to git root first."""
+        hooks = generate_hooks_settings()
+        for event_name, groups in hooks.items():
+            for group in groups:
+                for hook in group["hooks"]:
+                    cmd = hook["command"]
+                    if ".memory/hooks/" in cmd:
+                        self.assertIn(
+                            'cd "$(git rev-parse --show-toplevel)"',
+                            cmd,
+                            f"{event_name} hook missing cd-to-root prefix",
+                        )
+
+    def test_hooks_upgrade_replaces_old_relative_paths(self):
+        """Merging over old relative-path hooks should replace, not duplicate."""
+        # Simulate settings from a pre-fix installation (relative paths)
+        old_settings = {
+            "permissions": {"allow": []},
+            "hooks": {
+                "Stop": [
+                    {
+                        "matcher": "",
+                        "hooks": [
+                            {
+                                "type": "command",
+                                "command": "python3 .memory/hooks/stop_harvest.py",
+                                "timeout": 30,
+                                "once": True,
+                            }
+                        ],
+                    }
+                ],
+                "SessionStart": [
+                    {
+                        "matcher": "",
+                        "hooks": [
+                            {
+                                "type": "command",
+                                "command": "bash .memory/hooks/session_start.sh",
+                                "timeout": 15,
+                            }
+                        ],
+                    }
+                ],
+            },
+        }
+        result = merge_settings_json(old_settings)
+        # Should have exactly 1 Stop group (replaced, not appended)
+        self.assertEqual(len(result["hooks"]["Stop"]), 1)
+        stop_cmd = result["hooks"]["Stop"][0]["hooks"][0]["command"]
+        self.assertIn("git rev-parse", stop_cmd)
+        # Should have exactly 1 SessionStart group (replaced)
+        self.assertEqual(len(result["hooks"]["SessionStart"]), 1)
+        start_cmd = result["hooks"]["SessionStart"][0]["hooks"][0]["command"]
+        self.assertIn("git rev-parse", start_cmd)
+
 
 # ===========================================================================
 # Test: scan_project
