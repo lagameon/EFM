@@ -59,15 +59,23 @@ def main():
 
     query = " ".join(query_parts)
 
+    # Load config (with preset resolution)
+    config_path = _MEMORY_DIR / "config.json"
+    try:
+        from lib.config_presets import load_config
+        config = load_config(config_path)
+    except Exception:
+        config = {}
+
+    # Check if hook is disabled via config
+    if not config.get("hooks", {}).get("pre_edit_search_enabled", True):
+        sys.exit(0)
+
     # Run memory search
     try:
         from lib.search import search_memory
 
         events_path = _PROJECT_ROOT / ".memory" / "events.jsonl"
-        config_path = _MEMORY_DIR / "config.json"
-        config = {}
-        if config_path.exists():
-            config = json.loads(config_path.read_text())
 
         results = search_memory(query, events_path, config=config, max_results=3)
 

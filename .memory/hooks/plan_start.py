@@ -24,10 +24,12 @@ def main():
         # Can't read input — don't block
         sys.exit(0)
 
-    # Load config
+    # Load config (with preset resolution)
     config_path = _MEMORY_DIR / "config.json"
     try:
-        config = json.loads(config_path.read_text())
+        sys.path.insert(0, str(_MEMORY_DIR))
+        from lib.config_presets import load_config
+        config = load_config(config_path)
     except Exception:
         config = {}
 

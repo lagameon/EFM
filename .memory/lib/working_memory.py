@@ -398,6 +398,24 @@ def get_session_status(working_dir: Path) -> SessionStatus:
     )
 
 
+def is_session_complete(working_dir: Path) -> bool:
+    """Check if all phases in task_plan.md are marked [DONE].
+
+    Returns True only when the plan has at least one phase and ALL
+    phases are completed.  Returns False for missing/empty plans or
+    if any phase is still in progress.
+    """
+    plan_path = working_dir / TASK_PLAN_FILE
+    if not plan_path.exists():
+        return False
+    try:
+        plan_text = plan_path.read_text()
+    except OSError:
+        return False
+    total, done = _count_phases(plan_text)
+    return total > 0 and done == total
+
+
 def harvest_session(
     working_dir: Path,
     events_path: Path,
@@ -659,6 +677,48 @@ def _sanitize_anchor(source_hint: str) -> str:
     return anchor or "session"
 
 
+def _compute_extraction_confidence(candidate: HarvestCandidate) -> float:
+    """Compute an extraction confidence score for a harvest candidate.
+
+    Score heuristic (no LLM needed):
+      - Explicit LESSON/DECISION/CONSTRAINT marker → 0.9 base
+      - MUST/NEVER/ALWAYS pattern → 0.8 base
+      - WARNING/RISK marker → 0.75 base
+      - Error-Fix pattern → 0.7 base
+      - Unknown pattern → 0.6 base
+      - +0.05 if title length > 20 chars (more specific)
+      - +0.05 if rule field is present
+      - Cap at 1.0
+
+    Returns float in [0.0, 1.0].
+    """
+    reason = (candidate.extraction_reason or "").lower()
+
+    # Base score from extraction pattern type
+    if any(kw in reason for kw in ("lesson:", "decision:", "constraint:")):
+        score = 0.9
+    elif "explicit" in reason and any(
+        kw in reason for kw in ("lesson", "decision", "constraint")
+    ):
+        score = 0.9
+    elif any(kw in reason for kw in ("must", "never", "always")):
+        score = 0.8
+    elif any(kw in reason for kw in ("warning", "risk")):
+        score = 0.75
+    elif any(kw in reason for kw in ("error", "fix")):
+        score = 0.7
+    else:
+        score = 0.6
+
+    # Bonuses
+    if len(candidate.title) > 20:
+        score += 0.05
+    if candidate.rule:
+        score += 0.05
+
+    return min(1.0, round(score, 2))
+
+
 def _convert_candidate_to_entry(
     candidate: HarvestCandidate,
     project_root: Path,
@@ -721,7 +781,10 @@ def _convert_candidate_to_entry(
         "created_at": now,
         "last_verified": None,
         "deprecated": False,
-        "_meta": {"auto_harvested": True},
+        "_meta": {
+            "auto_harvested": True,
+            "extraction_confidence": _compute_extraction_confidence(candidate),
+        },
     }
 
 
@@ -754,8 +817,13 @@ def auto_harvest_and_persist(
     project_root: Path,
     config: dict,
     run_pipeline_after: bool = True,
+    draft_only: bool = False,
 ) -> dict:
     """Full closed-loop automation: harvest → convert → write → pipeline → clear.
+
+    If *draft_only* is True, all valid entries are routed to drafts
+    instead of events.jsonl (used when session is incomplete and
+    ``v3.require_complete_for_harvest`` is enabled).
 
     Steps:
       1. harvest_session() → candidates
@@ -771,6 +839,7 @@ def auto_harvest_and_persist(
         "candidates_found": 0,
         "entries_written": 0,
         "entries_skipped": 0,
+        "dedup_skipped": [],
         "pipeline_run": False,
         "session_cleared": False,
         "errors": [],
@@ -817,10 +886,16 @@ def auto_harvest_and_persist(
             )
             if dedup.is_duplicate:
                 result["entries_skipped"] += 1
+                similar_id = dedup.similar_entries[0][0]
+                similarity = dedup.similar_entries[0][1]
+                result["dedup_skipped"].append({
+                    "title": candidate.title,
+                    "similar_to": similar_id,
+                    "similarity": similarity,
+                })
                 logger.info(
                     f"Skipped duplicate entry '{candidate.title}': "
-                    f"similar to {dedup.similar_entries[0][0]} "
-                    f"({dedup.similar_entries[0][1]:.0%})"
+                    f"similar to {similar_id} ({similarity:.0%})"
                 )
                 continue
 
@@ -829,13 +904,47 @@ def auto_harvest_and_persist(
             result["entries_skipped"] += 1
             result["errors"].append(f"Convert failed for '{candidate.title}': {e}")
 
-    # Step 4: Write to events.jsonl
-    if valid_entries:
+    # Step 4: Route entries by confidence threshold or draft_only flag
+    confidence_threshold = config.get("automation", {}).get(
+        "auto_persist_confidence_threshold"
+    )
+    result["entries_drafted"] = 0
+
+    entries_to_write = []
+    if draft_only:
+        # All entries → drafts (incomplete session + require_complete_for_harvest)
+        for entry in valid_entries:
+            try:
+                from .auto_capture import create_draft
+                drafts_dir = events_path.parent / "drafts"
+                create_draft(entry, drafts_dir)
+                result["entries_drafted"] += 1
+            except Exception as e:
+                result["errors"].append(f"Draft creation failed: {e}")
+    elif confidence_threshold is not None:
+        # Route by confidence score
+        for entry in valid_entries:
+            conf = entry.get("_meta", {}).get("extraction_confidence", 1.0)
+            if conf < confidence_threshold:
+                try:
+                    from .auto_capture import create_draft
+                    drafts_dir = events_path.parent / "drafts"
+                    create_draft(entry, drafts_dir)
+                    result["entries_drafted"] += 1
+                except Exception as e:
+                    result["errors"].append(f"Draft creation failed: {e}")
+            else:
+                entries_to_write.append(entry)
+    else:
+        entries_to_write = valid_entries
+
+    # Write high-confidence entries to events.jsonl
+    if entries_to_write:
         try:
             with open(events_path, "a") as f:
-                for entry in valid_entries:
+                for entry in entries_to_write:
                     f.write(json.dumps(entry, ensure_ascii=False) + "\n")
-            result["entries_written"] = len(valid_entries)
+            result["entries_written"] = len(entries_to_write)
         except Exception as e:
             result["errors"].append(f"Write failed: {e}")
 

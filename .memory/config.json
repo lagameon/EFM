@@ -1,6 +1,7 @@
 {
   "$schema": "./config.schema.json",
   "version": "1.5",
+  "preset": "standard",
 
   "embedding": {
     "enabled": false,

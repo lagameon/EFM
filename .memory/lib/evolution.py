@@ -11,6 +11,8 @@ No external dependencies — pure Python stdlib + internal M1-M4 modules.
 """
 
 import difflib
+import hashlib
+import json
 import logging
 import math
 import time
@@ -142,6 +144,7 @@ class EvolutionReport:
     entries_high_confidence: int = 0
     entries_medium_confidence: int = 0
     entries_low_confidence: int = 0
+    from_cache: bool = False
     duration_ms: float = 0.0
 
 
@@ -794,6 +797,10 @@ def build_evolution_report(
     5. Aggregate health score
 
     Health score = mean of all entry confidence scores.
+
+    When ``evolution.incremental_checkpoint`` is True (default), caches
+    aggregate results.  If the set of active entry IDs hasn't changed,
+    returns cached summary (skips O(n²) duplicate scan + confidence calc).
     """
     t0 = time.monotonic()
 
@@ -815,6 +822,30 @@ def build_evolution_report(
             deprecated_entries=deprecated_count,
             duration_ms=(time.monotonic() - t0) * 1000,
         )
+
+    # --- Incremental checkpoint ---
+    use_checkpoint = config.get("evolution", {}).get("incremental_checkpoint", True)
+    memory_dir = events_path.parent
+    ids_hash = _compute_entry_ids_hash(active)
+
+    if use_checkpoint:
+        cached = _load_evolution_checkpoint(memory_dir)
+        if cached and cached.get("entry_ids_hash") == ids_hash:
+            logger.info("Evolution checkpoint hit — returning cached summary")
+            return EvolutionReport(
+                total_entries=total_entries,
+                active_entries=active_count,
+                deprecated_entries=deprecated_count,
+                health_score=cached.get("health_score", 0.0),
+                avg_confidence=cached.get("avg_confidence", 0.0),
+                entries_high_confidence=cached.get("entries_high", 0),
+                entries_medium_confidence=cached.get("entries_medium", 0),
+                entries_low_confidence=cached.get("entries_low", 0),
+                from_cache=True,
+                duration_ms=(time.monotonic() - t0) * 1000,
+            )
+
+    # --- Full computation ---
 
     # 1. Duplicates (pass preloaded entries to avoid re-reading JSONL)
     dup_report = find_duplicates(events_path, config, vectordb, embedder, _preloaded_entries=all_entries)
@@ -846,6 +877,11 @@ def build_evolution_report(
     medium = sum(1 for cs in confidence_scores if cs.classification == "medium")
     low = sum(1 for cs in confidence_scores if cs.classification == "low")
 
+    # Save checkpoint for next time
+    if use_checkpoint:
+        _save_evolution_checkpoint(memory_dir, ids_hash, health_score,
+                                   avg_confidence, high, medium, low)
+
     return EvolutionReport(
         total_entries=total_entries,
         active_entries=active_count,
@@ -861,3 +897,54 @@ def build_evolution_report(
         entries_low_confidence=low,
         duration_ms=(time.monotonic() - t0) * 1000,
     )
+
+
+# ---------------------------------------------------------------------------
+# Evolution checkpoint helpers
+# ---------------------------------------------------------------------------
+
+_CHECKPOINT_FILE = "evolution_checkpoint.json"
+
+
+def _compute_entry_ids_hash(active: Dict[str, dict]) -> str:
+    """Compute a hash of sorted active entry IDs for change detection."""
+    key = ",".join(sorted(active.keys()))
+    return hashlib.sha256(key.encode()).hexdigest()[:16]
+
+
+def _load_evolution_checkpoint(memory_dir: Path) -> Optional[dict]:
+    """Load evolution checkpoint from .memory/evolution_checkpoint.json."""
+    cp_path = memory_dir / _CHECKPOINT_FILE
+    if not cp_path.exists():
+        return None
+    try:
+        return json.loads(cp_path.read_text())
+    except (json.JSONDecodeError, OSError):
+        return None
+
+
+def _save_evolution_checkpoint(
+    memory_dir: Path,
+    ids_hash: str,
+    health_score: float,
+    avg_confidence: float,
+    high: int,
+    medium: int,
+    low: int,
+) -> None:
+    """Save evolution checkpoint for incremental skipping."""
+    cp = {
+        "entry_ids_hash": ids_hash,
+        "health_score": round(health_score, 4),
+        "avg_confidence": round(avg_confidence, 4),
+        "entries_high": high,
+        "entries_medium": medium,
+        "entries_low": low,
+        "saved_at": datetime.now(timezone.utc).isoformat(),
+    }
+    try:
+        (memory_dir / _CHECKPOINT_FILE).write_text(
+            json.dumps(cp, indent=2) + "\n"
+        )
+    except OSError as exc:
+        logger.warning("Could not write evolution checkpoint: %s", exc)

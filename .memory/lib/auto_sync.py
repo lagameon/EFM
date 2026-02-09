@@ -49,6 +49,7 @@ class StepResult:
     skipped: bool = False
     skip_reason: str = ""
     error: str = ""
+    retries: int = 0
     details: Dict = field(default_factory=dict)
 
 
@@ -103,36 +104,45 @@ def run_pipeline(
         "harvest_check"    — scan working memory for harvestable candidates (M9)
 
     Each step is isolated: failure in one doesn't block others.
+    Failed steps are retried with exponential backoff (configurable).
     Embedding disabled → sync still updates FTS index.
     """
     report = PipelineReport()
     start_time = time.monotonic()
 
+    automation_config = config.get("automation", {})
+    max_retries = automation_config.get("pipeline_max_retries", 2)
+    retry_delay = automation_config.get("pipeline_retry_delay", 1.0)
+
     # Resolve steps
     if steps is None:
-        steps = config.get("automation", {}).get(
+        steps = automation_config.get(
             "pipeline_steps",
             ["sync_embeddings", "generate_rules"],
         )
 
+    step_dispatch = {
+        "sync_embeddings": lambda: _run_sync_step(events_path, config),
+        "generate_rules": lambda: _run_rules_step(events_path, config, project_root),
+        "evolution_check": lambda: _run_evolution_step(events_path, config, project_root),
+        "reasoning_check": lambda: _run_reasoning_step(events_path, config, project_root),
+        "harvest_check": lambda: _run_harvest_step(events_path, config, project_root),
+    }
+
     for step_name in steps:
         report.steps_run += 1
 
-        if step_name == "sync_embeddings":
-            result = _run_sync_step(events_path, config)
-        elif step_name == "generate_rules":
-            result = _run_rules_step(events_path, config, project_root)
-        elif step_name == "evolution_check":
-            result = _run_evolution_step(events_path, config, project_root)
-        elif step_name == "reasoning_check":
-            result = _run_reasoning_step(events_path, config, project_root)
-        elif step_name == "harvest_check":
-            result = _run_harvest_step(events_path, config, project_root)
-        else:
+        if step_name not in step_dispatch:
             result = StepResult(
                 step=step_name,
                 success=False,
                 error=f"Unknown step: {step_name}",
+            )
+        else:
+            result = _run_step_with_retry(
+                step_dispatch[step_name],
+                max_retries=max_retries,
+                retry_delay=retry_delay,
             )
 
         report.step_results.append(result)
@@ -145,7 +155,63 @@ def run_pipeline(
             report.steps_failed += 1
 
     report.duration_ms = (time.monotonic() - start_time) * 1000
+
+    # Save pipeline state for startup diagnostics
+    _save_pipeline_state(events_path.parent, report)
+
     return report
+
+
+def _run_step_with_retry(
+    step_fn,
+    max_retries: int = 2,
+    retry_delay: float = 1.0,
+) -> StepResult:
+    """Run a pipeline step with retry on failure (exponential backoff)."""
+    result = step_fn()
+    retries = 0
+    while not result.success and not result.skipped and retries < max_retries:
+        retries += 1
+        time.sleep(retry_delay * (2 ** (retries - 1)))
+        result = step_fn()
+    result.retries = retries
+    return result
+
+
+def _save_pipeline_state(memory_dir: Path, report: PipelineReport) -> None:
+    """Write pipeline run state to .memory/pipeline_state.json."""
+    state = {
+        "last_run": datetime.now(timezone.utc).isoformat(),
+        "duration_ms": round(report.duration_ms, 1),
+        "steps_succeeded": report.steps_succeeded,
+        "steps_failed": report.steps_failed,
+        "steps": {},
+    }
+    for sr in report.step_results:
+        state["steps"][sr.step] = {
+            "status": "skipped" if sr.skipped else ("success" if sr.success else "failed"),
+            "retries": sr.retries,
+        }
+        if sr.error:
+            state["steps"][sr.step]["error"] = sr.error
+
+    try:
+        (memory_dir / "pipeline_state.json").write_text(
+            json.dumps(state, indent=2) + "\n"
+        )
+    except OSError as exc:
+        logger.warning("Could not write pipeline state: %s", exc)
+
+
+def _load_pipeline_state(memory_dir: Path) -> Optional[dict]:
+    """Load last pipeline run state from .memory/pipeline_state.json."""
+    state_path = memory_dir / "pipeline_state.json"
+    if not state_path.exists():
+        return None
+    try:
+        return json.loads(state_path.read_text())
+    except (json.JSONDecodeError, OSError):
+        return None
 
 
 def _run_sync_step(events_path: Path, config: dict) -> StepResult:
@@ -512,16 +578,26 @@ def check_startup(
     except Exception:
         pass  # Working memory module not available — skip silently
 
-    # 5. Format hint
-    report.hint = _format_hint(report)
+    # 5. Format hint (include pipeline state diagnostics)
+    report.hint = _format_hint(report, events_path.parent)
 
     report.duration_ms = (time.monotonic() - start_time) * 1000
     return report
 
 
-def _format_hint(report: StartupReport) -> str:
+def _format_hint(report: StartupReport, memory_dir: Optional[Path] = None) -> str:
     """Format the startup hint string."""
     parts = []
+
+    # Check last pipeline run for failures
+    if memory_dir:
+        last_run = _load_pipeline_state(memory_dir)
+        if last_run and last_run.get("steps_failed", 0) > 0:
+            failed_names = [
+                name for name, info in last_run.get("steps", {}).items()
+                if info.get("status") == "failed"
+            ]
+            parts.append(f"pipeline: last run had {len(failed_names)} failures ({', '.join(failed_names)})")
 
     if report.active_session:
         task_preview = report.active_session_task[:50]

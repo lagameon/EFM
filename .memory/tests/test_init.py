@@ -84,11 +84,23 @@ class TestGenerateEfMemorySection(unittest.TestCase):
         section = generate_ef_memory_section(config)
         self.assertIn("off", section)
 
-    def test_contains_commands_table(self):
+    def test_contains_core_commands(self):
         section = generate_ef_memory_section(_make_config())
         self.assertIn("/memory-search", section)
         self.assertIn("/memory-save", section)
+        self.assertIn("/memory-plan", section)
+        self.assertIn("Core Commands", section)
+
+    def test_contains_advanced_commands(self):
+        section = generate_ef_memory_section(_make_config())
         self.assertIn("/memory-init", section)
+        self.assertIn("/memory-import", section)
+        self.assertIn("/memory-scan", section)
+        self.assertIn("/memory-verify", section)
+        self.assertIn("/memory-evolve", section)
+        self.assertIn("/memory-reason", section)
+        self.assertIn("/memory-compact", section)
+        self.assertIn("Advanced Commands", section)
 
     def test_contains_startup_instructions(self):
         section = generate_ef_memory_section(_make_config())
@@ -99,6 +111,30 @@ class TestGenerateEfMemorySection(unittest.TestCase):
         section = generate_ef_memory_section({})
         self.assertIn(_EFM_SECTION_START, section)
         self.assertIn("on (default)", section)
+
+    def test_preset_displayed_when_present(self):
+        """Section should show active preset name."""
+        config = _make_config(preset="standard")
+        section = generate_ef_memory_section(config)
+        self.assertIn("standard", section)
+        self.assertIn("Active preset", section)
+
+    def test_no_preset_shows_custom(self):
+        """Section should show 'custom config' when no preset."""
+        section = generate_ef_memory_section(_make_config())
+        self.assertIn("custom config", section)
+
+    def test_all_ten_commands_present(self):
+        """All 10 slash commands should be listed somewhere in the section."""
+        section = generate_ef_memory_section(_make_config())
+        all_commands = [
+            "/memory-search", "/memory-save", "/memory-plan",
+            "/memory-import", "/memory-scan", "/memory-verify",
+            "/memory-evolve", "/memory-reason", "/memory-compact",
+            "/memory-init",
+        ]
+        for cmd in all_commands:
+            self.assertIn(cmd, section, f"Missing command: {cmd}")
 
 
 # ===========================================================================
@@ -139,10 +175,16 @@ class TestGenerateStartupRule(unittest.TestCase):
         content = generate_startup_rule(_make_config())
         self.assertLess(len(content), 1000)
 
-    def test_contains_memory_commands(self):
+    def test_contains_core_commands(self):
         content = generate_startup_rule(_make_config())
         self.assertIn("/memory-search", content)
         self.assertIn("/memory-save", content)
+        self.assertIn("/memory-plan", content)
+
+    def test_contains_all_commands_reference(self):
+        """Startup rule should reference CLAUDE.md for full command list."""
+        content = generate_startup_rule(_make_config())
+        self.assertIn("All commands", content)
 
 
 # ===========================================================================

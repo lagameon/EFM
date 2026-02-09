@@ -36,10 +36,12 @@ def main():
     if input_data.get("stop_hook_active", False):
         sys.exit(0)
 
-    # Load config
+    # Load config (with preset resolution)
     config_path = _MEMORY_DIR / "config.json"
     try:
-        config = json.loads(config_path.read_text())
+        sys.path.insert(0, str(_MEMORY_DIR))
+        from lib.config_presets import load_config
+        config = load_config(config_path)
     except Exception:
         config = {}
 
@@ -100,7 +102,11 @@ def main():
         # Full automation: harvest → convert → write → pipeline → clear
         try:
             sys.path.insert(0, str(_MEMORY_DIR))
-            from lib.working_memory import auto_harvest_and_persist
+            from lib.working_memory import auto_harvest_and_persist, is_session_complete
+
+            # Check session completeness
+            session_complete = is_session_complete(working_dir)
+            require_complete = v3_config.get("require_complete_for_harvest", False)
 
             events_path = _MEMORY_DIR / "events.jsonl"
             report = auto_harvest_and_persist(
@@ -109,13 +115,29 @@ def main():
                 project_root=_PROJECT_ROOT,
                 config=config,
                 run_pipeline_after=True,
+                draft_only=require_complete and not session_complete,
             )
 
-            lines = ["[EF Memory] Auto-harvested working session:"]
+            status_label = "complete" if session_complete else "partial"
+            lines = [f"[EF Memory] Auto-harvested working session ({status_label}):"]
             lines.append(f"  Candidates found: {report['candidates_found']}")
             lines.append(f"  Entries written: {report['entries_written']}")
             if report["entries_skipped"]:
                 lines.append(f"  Entries skipped: {report['entries_skipped']}")
+            dedup_skipped = report.get("dedup_skipped", [])
+            if dedup_skipped:
+                lines.append("  Duplicates skipped:")
+                for ds in dedup_skipped[:3]:
+                    title = ds["title"][:50]
+                    lines.append(
+                        f"    - \"{title}\" "
+                        f"(~{ds['similarity']:.0%} similar to {ds['similar_to']})"
+                    )
+                if len(dedup_skipped) > 3:
+                    lines.append(f"    ... and {len(dedup_skipped) - 3} more")
+            drafted = report.get("entries_drafted", 0)
+            if drafted:
+                lines.append(f"  Entries routed to drafts (low confidence): {drafted}")
             lines.append(f"  Pipeline run: {'yes' if report['pipeline_run'] else 'no'}")
             lines.append(f"  Session cleared: {'yes' if report['session_cleared'] else 'no'}")
             if report["errors"]:

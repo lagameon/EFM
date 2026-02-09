@@ -64,6 +64,17 @@ def generate_ef_memory_section(config: dict, entry_count: int = 0) -> str:
     human_review = config.get("automation", {}).get("human_review_required", True)
     review_status = "on (default)" if human_review else "off"
 
+    # Preset display
+    preset_name = config.get("preset")
+    if preset_name:
+        try:
+            from .config_presets import describe_preset
+            preset_line = f"- Active preset: **{preset_name}** ({describe_preset(preset_name)})"
+        except ImportError:
+            preset_line = f"- Active preset: **{preset_name}**"
+    else:
+        preset_line = "- Preset: none (custom config)"
+
     return f"""{_EFM_SECTION_START}
 
 # Project Memory (EF Memory)
@@ -84,19 +95,29 @@ Memory store: `.memory/events.jsonl` ({entry_count} entries).
 - For complex multi-step tasks, use: `/memory-plan <description>` to start a working memory session
 - Use `/memory-import <doc>` to extract knowledge from documents
 
-## Memory Commands
+## Core Commands (start here)
 
 | Command | Purpose |
 |---------|---------|
 | `/memory-search <query>` | Find relevant project knowledge |
-| `/memory-save` | Capture a new lesson / decision / constraint |
-| `/memory-import <path>` | Extract candidates from documents |
-| `/memory-verify` | Check memory integrity (read-only) |
-| `/memory-plan` | Start / resume working memory session |
+| `/memory-save` | Capture a lesson / decision / constraint |
+| `/memory-plan` | Start / resume a working memory session |
+
+## Advanced Commands
+
+| Command | Purpose |
+|---------|---------|
+| `/memory-import <path>` | Extract from documents |
+| `/memory-scan` | Batch discover + import |
+| `/memory-verify` | Integrity check (read-only) |
+| `/memory-evolve` | Health / evolution analysis |
+| `/memory-reason` | LLM reasoning (needs API key) |
+| `/memory-compact` | Compact + archive |
 | `/memory-init` | Re-initialize startup files |
 
 ## Configuration
 
+{preset_line}
 - Memory config: `.memory/config.json`
 - Human review: {review_status} (toggle via config or say "turn off/on memory review")
 - Hard rules auto-injected from `.claude/rules/ef-memory/` when generated
@@ -114,6 +135,7 @@ def generate_startup_rule(config: dict, entry_count: int = 0) -> str:
     Generate .claude/rules/ef-memory-startup.md content.
 
     Intentionally brief (<200 tokens) to minimize context overhead.
+    Mentions only core commands to reduce cognitive load.
     """
     return f"""# EF Memory — Session Awareness
 
@@ -122,10 +144,10 @@ def generate_startup_rule(config: dict, entry_count: int = 0) -> str:
 This project has an EF Memory system at `.memory/`.
 
 - Memory store: `.memory/events.jsonl` ({entry_count} entries)
-- Use `/memory-search` before modifying code in critical paths
-- Use `/memory-save` after completing significant tasks
+- Core: `/memory-search` (find knowledge), `/memory-save` (capture lessons), `/memory-plan` (working sessions)
 - Hard memory rules in `.claude/rules/ef-memory/` auto-load when present
 - If `.memory/working/task_plan.md` exists, an active working session is in progress — read it first
+- All commands: see CLAUDE.md Memory Commands section
 """
 
 

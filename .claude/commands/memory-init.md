@@ -1,5 +1,13 @@
 # /memory-init — Initialize EF Memory auto-startup
 
+## Quick Start
+
+```bash
+python3 .memory/scripts/init_cli.py --preset standard
+```
+
+Presets: `minimal` (try EFM, human review on) | `standard` (most projects, auto-harvest on) | `full` (requires API keys for embeddings + LLM reasoning)
+
 ## Purpose
 
 Generate or update the auto-startup files that make every Claude Code session
