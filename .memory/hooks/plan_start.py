@@ -45,13 +45,22 @@ def main():
     if (working_dir / "task_plan.md").exists():
         sys.exit(0)
 
+    # Extract task description from hook input
+    tool_input = input_data.get("tool_input", {})
+    task_desc = (
+        tool_input.get("description")
+        or tool_input.get("task")
+        or tool_input.get("title")
+        or "Plan session"
+    )
+
     # Start session
     try:
         sys.path.insert(0, str(_MEMORY_DIR))
         from lib.working_memory import start_session
 
         report = start_session(
-            task_description="Plan session",
+            task_description=task_desc,
             events_path=events_path,
             working_dir=working_dir,
             config=config,

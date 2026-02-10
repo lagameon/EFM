@@ -78,7 +78,7 @@ git checkout -b feature/your-feature-name
 ### 4. Test locally
 
 ```bash
-# Run the full test suite (804 tests)
+# Run the full test suite (824 tests)
 python3 -m pytest .memory/tests -v
 
 # Validate config files
@@ -95,7 +95,7 @@ python3 .memory/scripts/pipeline_cli.py --help
 # Check that examples are valid
 ```
 
-**Important**: All 804 tests must pass before submitting. Do not reduce test count.
+**Important**: All 824 tests must pass before submitting. Do not reduce test count.
 
 ### 5. Submit PR
 

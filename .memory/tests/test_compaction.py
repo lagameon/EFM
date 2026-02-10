@@ -10,6 +10,7 @@ import os
 import sys
 import tempfile
 import unittest
+import unittest.mock
 from pathlib import Path
 
 # Import path setup
@@ -427,6 +428,56 @@ class TestAutoCompactOnStop(unittest.TestCase):
             stats = get_compaction_stats(events_path, threshold=2.0)
             self.assertFalse(stats.suggest_compact)
             # In the stop hook, compact() would NOT be called
+
+
+# ---------------------------------------------------------------------------
+# Tests: evolution checkpoint reset
+# ---------------------------------------------------------------------------
+
+class TestEvolutionCheckpointReset(unittest.TestCase):
+    def setUp(self):
+        self.tmpdir = Path(tempfile.mkdtemp())
+        self.events_path = self.tmpdir / "events.jsonl"
+        self.archive_dir = self.tmpdir / "archive"
+
+    def test_compact_resets_evolution_checkpoint(self):
+        """Compaction should delete evolution_checkpoint.json."""
+        # Create entries with a deprecated one to trigger actual compaction
+        e1 = _make_entry("a-test-00000001", title="Active entry")
+        e2 = _make_entry("b-test-00000002", title="Old entry", deprecated=True)
+        _write_events(self.events_path, [e1, e2])
+
+        # Create a fake checkpoint file
+        cp_path = self.tmpdir / "evolution_checkpoint.json"
+        cp_path.write_text('{"hash": "old"}')
+
+        compact(self.events_path, self.archive_dir, {})
+
+        self.assertFalse(cp_path.exists(), "evolution_checkpoint.json should be deleted after compaction")
+
+    def test_compact_no_checkpoint_ok(self):
+        """Compaction should not fail if no checkpoint exists."""
+        e1 = _make_entry("a-test-00000001")
+        e2 = _make_entry("b-test-00000002", deprecated=True)
+        _write_events(self.events_path, [e1, e2])
+
+        # No checkpoint file exists
+        report = compact(self.events_path, self.archive_dir, {})
+        self.assertEqual(report.entries_kept, 1)
+
+    def test_compact_checkpoint_permission_error(self):
+        """Compaction should not fail if checkpoint can't be deleted."""
+        e1 = _make_entry("a-test-00000001")
+        e2 = _make_entry("b-test-00000002", deprecated=True)
+        _write_events(self.events_path, [e1, e2])
+
+        cp_path = self.tmpdir / "evolution_checkpoint.json"
+        cp_path.write_text('{"hash": "old"}')
+
+        # Mock unlink to raise OSError
+        with unittest.mock.patch.object(Path, 'unlink', side_effect=OSError("Permission denied")):
+            report = compact(self.events_path, self.archive_dir, {})
+            self.assertEqual(report.entries_kept, 1)  # Compaction still succeeds
 
 
 if __name__ == "__main__":

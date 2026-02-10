@@ -210,3 +210,24 @@ class TestPresetCompleteness:
 
     def test_valid_preset_names_matches(self):
         assert VALID_PRESET_NAMES == frozenset(PRESETS.keys())
+
+
+# ---------------------------------------------------------------------------
+# Preset compaction
+# ---------------------------------------------------------------------------
+
+
+class TestPresetCompaction:
+    def test_all_presets_have_compaction(self):
+        """Every preset must include a compaction section."""
+        for name, preset in PRESETS.items():
+            assert "compaction" in preset, f"Preset '{name}' missing compaction config"
+            assert "auto_suggest_threshold" in preset["compaction"], \
+                f"Preset '{name}' missing auto_suggest_threshold"
+
+    def test_compaction_thresholds_ordered(self):
+        """Minimal < standard < full for compaction threshold."""
+        assert PRESETS["minimal"]["compaction"]["auto_suggest_threshold"] < \
+            PRESETS["standard"]["compaction"]["auto_suggest_threshold"]
+        assert PRESETS["standard"]["compaction"]["auto_suggest_threshold"] < \
+            PRESETS["full"]["compaction"]["auto_suggest_threshold"]

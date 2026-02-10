@@ -724,5 +724,118 @@ class TestWasteRatio(unittest.TestCase):
         self.assertEqual(report.waste_lines, 1)  # 3 lines - 2 active = 1 waste
 
 
+# ---------------------------------------------------------------------------
+# TestSingleRead — B3: verify events.jsonl is read only once
+# ---------------------------------------------------------------------------
+
+class TestSingleRead(unittest.TestCase):
+
+    def setUp(self):
+        self.tmpdir = Path(tempfile.mkdtemp())
+        self.events_path = self.tmpdir / "events.jsonl"
+        self.drafts_dir = self.tmpdir / "drafts"
+        self.drafts_dir.mkdir()
+
+    def test_check_startup_single_file_read(self):
+        """check_startup should read events.jsonl once via load_events_latest_wins,
+        not re-open the file for line counting."""
+        now = datetime.now(timezone.utc).isoformat()
+        entry = _make_valid_entry(created_at=now, source=["PR #1"])
+        # Write multiple lines to make waste ratio meaningful
+        with open(self.events_path, "w") as f:
+            for _ in range(3):
+                f.write(json.dumps(entry) + "\n")
+
+        config = _make_config()
+        config["compaction"] = {"auto_suggest_threshold": 2.0}
+
+        import lib.auto_sync as auto_sync_mod
+        from unittest.mock import patch, call
+
+        # Patch the function that auto_sync imports inside check_startup
+        original_fn = None
+        try:
+            from lib.events_io import load_events_latest_wins as _orig
+            original_fn = _orig
+        except ImportError:
+            self.skipTest("events_io module not available")
+
+        call_count = {"n": 0}
+        original_result = None
+
+        def counting_load(*args, **kwargs):
+            call_count["n"] += 1
+            return original_fn(*args, **kwargs)
+
+        with patch("lib.events_io.load_events_latest_wins", side_effect=counting_load):
+            report = check_startup(
+                self.events_path, self.drafts_dir, self.tmpdir, config
+            )
+
+        # The load function should be called exactly once
+        self.assertEqual(call_count["n"], 1,
+                         "load_events_latest_wins should be called exactly once")
+        # total_lines should still be computed correctly
+        self.assertEqual(report.total_entries, 1)  # 3 lines, 1 unique entry
+
+
+# ---------------------------------------------------------------------------
+# TestSessionRecoveryControlFlow — B4: no RuntimeError for control flow
+# ---------------------------------------------------------------------------
+
+class TestSessionRecoveryControlFlow(unittest.TestCase):
+
+    def setUp(self):
+        self.tmpdir = Path(tempfile.mkdtemp())
+        self.events_path = self.tmpdir / "events.jsonl"
+        self.events_path.write_text("")
+        self.drafts_dir = self.tmpdir / "drafts"
+        self.drafts_dir.mkdir()
+
+    def test_session_recovery_disabled_no_runtime_error(self):
+        """When session_recovery is False, check_startup should not raise
+        RuntimeError — it should simply skip session detection."""
+        config = _make_config()
+        config["v3"] = {"session_recovery": False}
+
+        # Should NOT raise RuntimeError
+        report = check_startup(
+            self.events_path, self.drafts_dir, self.tmpdir, config
+        )
+        self.assertFalse(report.active_session)
+
+    def test_session_recovery_enabled_detects_session(self):
+        """When session_recovery is True and a working memory session exists,
+        check_startup should detect it."""
+        config = _make_config()
+        config["v3"] = {
+            "session_recovery": True,
+            "working_memory_dir": ".memory/working",
+        }
+
+        # Create a working memory session (task_plan.md)
+        # Format must match _extract_field("Task") and _count_phases()
+        working_dir = self.tmpdir / ".memory" / "working"
+        working_dir.mkdir(parents=True)
+        task_plan = working_dir / "task_plan.md"
+        task_plan.write_text(
+            "# Task Plan\n\n"
+            "**Task**: Implement feature X\n\n"
+            "## Phases\n"
+            "### Phase 1: Research [DONE]\n"
+            "- Completed research\n\n"
+            "### Phase 2: Implementation\n"
+            "- In progress\n\n"
+            "### Phase 3: Testing\n"
+            "- Not started\n"
+        )
+
+        report = check_startup(
+            self.events_path, self.drafts_dir, self.tmpdir, config
+        )
+        self.assertTrue(report.active_session)
+        self.assertIn("Implement feature X", report.active_session_task)
+
+
 if __name__ == "__main__":
     unittest.main()

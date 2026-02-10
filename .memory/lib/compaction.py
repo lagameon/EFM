@@ -187,6 +187,16 @@ def _reset_sync_cursor(events_path: Path) -> None:
         pass  # vectors.db is optional — failing is fine
 
 
+def _reset_evolution_checkpoint(events_path: Path) -> None:
+    """Delete the evolution checkpoint to force a full re-analysis after compaction."""
+    try:
+        cp_path = events_path.parent / "evolution_checkpoint.json"
+        if cp_path.exists():
+            cp_path.unlink()
+    except OSError:
+        pass  # evolution checkpoint is optional
+
+
 def _log_compaction(archive_dir: Path, report: CompactionReport) -> None:
     """Append a compaction log entry to archive/compaction_log.jsonl."""
     archive_dir.mkdir(parents=True, exist_ok=True)
@@ -319,6 +329,8 @@ def compact(
 
     # Step 6: Reset sync cursor
     _reset_sync_cursor(events_path)
+    # Step 6b: Reset evolution checkpoint
+    _reset_evolution_checkpoint(events_path)
 
     # Step 7: Log
     report.duration_ms = (time.monotonic() - start_time) * 1000

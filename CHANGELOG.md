@@ -4,6 +4,63 @@ All notable changes to EF Memory for Claude will be documented in this file.
 
 ---
 
+## 2026-02-11 — V3.2: Critical Bug Fixes, Performance, Intelligence
+
+### 10 fixes across hooks, pipeline, reasoning, compaction, evolution, and presets
+
+**Critical: pre_edit_search hook completely fixed (H-2)**
+The pre-edit memory search hook was non-functional since creation — `search_memory()` returns a `SearchReport` dataclass, but the code iterated it as a list, causing a silent TypeError swallowed by `except: pass`. Now correctly uses `report.results` → `SearchResult.entry` dict access.
+
+**Hook output format standardized (UX-1)**
+`pre_edit_search.py` now outputs JSON `{"additionalContext": ...}` matching `plan_start.py` and `stop_harvest.py` protocol.
+
+**Smart query enrichment for pre-edit search (SMART-1)**
+Edit/Write hooks now extract identifiers from `old_string`/`content` (up to 6 terms) to enrich the search query beyond just the filename.
+
+**Pipeline config preset loading (H-1)**
+`pipeline_cli.py` now uses `load_config()` instead of raw `json.loads()`, ensuring preset defaults are applied consistently with stop hooks.
+
+**Reasoning timestamp crash fix (LOGIC-02)**
+`_parse_iso8601("")` in `reasoning.py` no longer crashes on empty/missing `created_at` — wrapped in try/except with graceful fallback.
+
+**Auto-sync single-read optimization (H-4/PERF-05)**
+`check_startup()` now reads `events.jsonl` once via `load_events_latest_wins()` instead of twice (once for entries, once for line count).
+
+**RuntimeError control flow replaced (H-5)**
+`auto_sync.py` no longer uses `raise RuntimeError` for flow control when `session_recovery` is disabled — replaced with clean if/else.
+
+**Evolution checkpoint reset on compaction (INTEGRATION-4)**
+`compact()` now deletes `evolution_checkpoint.json` after rewriting events, preventing stale cached analysis results.
+
+**Content-aware evolution hash (SMART-3)**
+`_compute_entry_ids_hash()` now includes `created_at` and `last_verified` in its fingerprint, so content changes invalidate the cache.
+
+**Precompiled regex in working_memory (PERF-06)**
+6 regex patterns in `_clean_markdown_artifacts()` moved to module-level precompiled constants.
+
+**Dynamic plan session description (SMART-6)**
+`plan_start.py` now extracts task description from hook input instead of hardcoding "Plan session".
+
+**Preset compaction config (INTEGRATION-5)**
+All 3 presets now include compaction thresholds: minimal=1.5, standard=2.0, full=3.0.
+
+**Version bump: 3.1.0 → 3.2.0**
+
+**Modified files (10):**
+- `.memory/hooks/pre_edit_search.py` — SearchReport iteration fix, JSON output, query enrichment
+- `.memory/hooks/plan_start.py` — Dynamic task description extraction
+- `.memory/scripts/pipeline_cli.py` — load_config() for preset resolution
+- `.memory/lib/reasoning.py` — Safe timestamp parsing
+- `.memory/lib/auto_sync.py` — Single-read optimization, clean control flow
+- `.memory/lib/compaction.py` — Evolution checkpoint reset
+- `.memory/lib/evolution.py` — Content-aware entry hash
+- `.memory/lib/working_memory.py` — Precompiled regex patterns
+- `.memory/lib/config_presets.py` — Preset compaction config, version bump to 3.2.0
+
+**Test count: 804 → 824** (+20 tests: 8 pre_edit_search + 5 auto_sync/reasoning + 7 compaction/evolution/presets)
+
+---
+
 ## 2026-02-10 — V3.1: Quality Gate, Session Dedup, --upgrade, Version Tracking
 
 ### Five improvements to harvest quality, deployment safety, and observability

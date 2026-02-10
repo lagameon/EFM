@@ -304,7 +304,10 @@ def find_correlations(
     # Temporal proximity (within 24h)
     entry_times: List[Tuple[str, datetime]] = []
     for eid, entry in entry_list:
-        ts = _parse_iso8601(entry.get("created_at", ""))
+        try:
+            ts = _parse_iso8601(entry.get("created_at", ""))
+        except (ValueError, TypeError):
+            ts = None
         if ts:
             entry_times.append((eid, ts))
     entry_times.sort(key=lambda x: x[1])

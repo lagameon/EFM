@@ -23,7 +23,7 @@ logger = logging.getLogger("efm.config_presets")
 
 # EFM release version — bumped on each significant release.
 # Used by check_startup() to detect outdated deployments.
-EFM_VERSION = "3.1.0"
+EFM_VERSION = "3.2.0"
 
 # ---------------------------------------------------------------------------
 # Preset definitions
@@ -40,6 +40,7 @@ PRESETS: Dict[str, Dict[str, Any]] = {
             "pipeline_steps": ["generate_rules"],
             "dedup_check_on_capture": True,
         },
+        "compaction": {"auto_suggest_threshold": 1.5, "sort_output": True},
         "v3": {
             "auto_startup": True,
             "auto_start_on_plan": True,
@@ -58,6 +59,7 @@ PRESETS: Dict[str, Dict[str, Any]] = {
             "pipeline_steps": ["sync_embeddings", "generate_rules"],
             "dedup_check_on_capture": True,
         },
+        "compaction": {"auto_suggest_threshold": 2.0, "sort_output": True},
         "v3": {
             "auto_startup": True,
             "auto_start_on_plan": True,
@@ -80,6 +82,7 @@ PRESETS: Dict[str, Dict[str, Any]] = {
             ],
             "dedup_check_on_capture": True,
         },
+        "compaction": {"auto_suggest_threshold": 3.0, "sort_output": True},
         "v3": {
             "auto_startup": True,
             "auto_start_on_plan": True,

@@ -753,5 +753,54 @@ class TestAnnotateSearchResults(unittest.TestCase):
         self.assertIsInstance(annotations, list)
 
 
+# ---------------------------------------------------------------------------
+# TestCorrelationTimestampSafety — B2: _parse_iso8601("") crash
+# ---------------------------------------------------------------------------
+
+class TestCorrelationTimestampSafety(unittest.TestCase):
+
+    def test_empty_created_at_no_crash(self):
+        """find_correlations should NOT raise ValueError when created_at is empty."""
+        entries = {
+            "a": {
+                "id": "a",
+                "tags": ["x", "y"],
+                "source": [],
+                "created_at": "",
+            },
+            "b": {
+                "id": "b",
+                "tags": ["x", "y"],
+                "source": [],
+                "created_at": "2026-02-01T14:00:00Z",
+            },
+        }
+        # Should not raise ValueError
+        report = find_correlations(entries, _make_config())
+        self.assertIsNotNone(report)
+        self.assertEqual(report.total_entries, 2)
+
+    def test_missing_created_at_no_crash(self):
+        """find_correlations should NOT raise when created_at key is missing."""
+        entries = {
+            "a": {
+                "id": "a",
+                "tags": ["x", "y"],
+                "source": [],
+                # No created_at key at all
+            },
+            "b": {
+                "id": "b",
+                "tags": ["x", "y"],
+                "source": [],
+                "created_at": "2026-02-01T14:00:00Z",
+            },
+        }
+        # Should not raise
+        report = find_correlations(entries, _make_config())
+        self.assertIsNotNone(report)
+        self.assertEqual(report.total_entries, 2)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -503,25 +503,20 @@ def check_startup(
     except Exception:
         report.pending_drafts = 0
 
-    # 2. Load entries and count stale
-    entries = _load_entries_latest_wins(events_path)
+    # 2. Load entries and count stale (single file read)
+    from .events_io import load_events_latest_wins as _load_events_full
+    entries, total_lines, _end_offset = _load_events_full(events_path)
     active_entries = {
         eid: e for eid, e in entries.items()
         if not e.get("deprecated", False)
     }
     report.total_entries = len(active_entries)
 
-    # Compaction stats — computed inline from already-loaded entries to avoid
-    # a second full parse of events.jsonl via get_compaction_stats().
+    # Compaction stats — uses total_lines from the single read above
     try:
         compact_threshold = config.get("compaction", {}).get(
             "auto_suggest_threshold", 2.0
         )
-        # Cheap line count (no JSON parsing)
-        total_lines = 0
-        if events_path.exists():
-            with open(events_path, "r", encoding="utf-8") as f:
-                total_lines = sum(1 for line in f if line.strip())
         active_count = len(active_entries)
         if active_count > 0:
             report.waste_ratio = round(total_lines / active_count, 2)
@@ -575,25 +570,23 @@ def check_startup(
     report.source_warnings = source_issues
 
     # 4. Session recovery — detect active working memory session
-    try:
-        v3_config = config.get("v3", {})
-        if not v3_config.get("session_recovery", True):
-            raise RuntimeError("session_recovery disabled")  # Skip to except
+    v3_config = config.get("v3", {})
+    if v3_config.get("session_recovery", True):
+        try:
+            from .working_memory import get_session_status as _get_wm_status
 
-        from .working_memory import get_session_status as _get_wm_status
+            working_dir_rel = v3_config.get("working_memory_dir", ".memory/working")
+            working_dir = project_root / working_dir_rel
+            wm_status = _get_wm_status(working_dir)
 
-        working_dir_rel = v3_config.get("working_memory_dir", ".memory/working")
-        working_dir = project_root / working_dir_rel
-        wm_status = _get_wm_status(working_dir)
-
-        if wm_status.active:
-            report.active_session = True
-            report.active_session_task = wm_status.task_description
-            report.active_session_phases = (
-                f"{wm_status.phases_done}/{wm_status.phases_total} done"
-            )
-    except Exception:
-        pass  # Working memory module not available — skip silently
+            if wm_status.active:
+                report.active_session = True
+                report.active_session_task = wm_status.task_description
+                report.active_session_phases = (
+                    f"{wm_status.phases_done}/{wm_status.phases_total} done"
+                )
+        except Exception:
+            pass  # Working memory module not available — skip silently
 
     # 5. Format hint (include pipeline state diagnostics)
     report.hint = _format_hint(report, events_path.parent)

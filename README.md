@@ -432,7 +432,7 @@ python3 .memory/scripts/init_cli.py --upgrade --dry-run  # Preview upgrade
 - Mutually exclusive with `--force`
 
 ### Version Tracking (Step 4)
-EFM now tracks its installed version (`EFM_VERSION = "3.1.0"` in `config_presets.py`):
+EFM now tracks its installed version (`EFM_VERSION` in `config_presets.py`):
 
 - `init` and `--upgrade` stamp `efm_version` into `config.json`
 - Startup health check compares installed vs. current version
@@ -829,7 +829,7 @@ Additional path keys (e.g., `FEATURE_ROOTS`, `DEPLOYMENT_ROOTS`) can be added fo
 │   ├── init_cli.py        #   V3: project init CLI
 │   ├── working_memory_cli.py  #  V3: working memory CLI
 │   └── compact_cli.py     #   V3: compaction CLI (--stats, --dry-run)
-└── tests/                 # 804 unit tests
+└── tests/                 # 824 unit tests
     ├── conftest.py
     ├── test_text_builder.py
     ├── test_vectordb.py
@@ -968,6 +968,6 @@ MIT — see [LICENSE](LICENSE).
 |-----------|---------|
 | Schema | 1.1 |
 | Config | 1.5 |
-| EFM Version | 3.1.0 |
+| EFM Version | 3.2.0 |
 | Commands | 1.3 (10 slash commands) |
-| V3 Engine | M11 (804 tests) |
+| V3 Engine | M11 (824 tests) |

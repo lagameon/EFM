@@ -59,6 +59,23 @@ def main():
 
     query = " ".join(query_parts)
 
+    # Enrich query with content from the edit/write operation
+    content_source = tool_input.get("old_string") or tool_input.get("content") or ""
+    if content_source:
+        import re as _re
+        tokens = _re.findall(r'[A-Za-z_][A-Za-z0-9_]{2,}', content_source[:500])
+        seen = set(query.lower().split())
+        extra = []
+        for t in tokens:
+            tl = t.lower()
+            if tl not in seen:
+                seen.add(tl)
+                extra.append(tl)
+                if len(extra) >= 6:
+                    break
+        if extra:
+            query = query + " " + " ".join(extra)
+
     # Load config (with preset resolution)
     config_path = _MEMORY_DIR / "config.json"
     try:
@@ -77,27 +94,21 @@ def main():
 
         events_path = _PROJECT_ROOT / ".memory" / "events.jsonl"
 
-        results = search_memory(query, events_path, config=config, max_results=3)
+        report = search_memory(query, events_path, config=config, max_results=3)
 
-        if results:
+        if report.results:
             lines = [f"[EF Memory] Relevant entries for {rel_path}:"]
-            for r in results:
-                entry = r.get("entry", r) if isinstance(r, dict) else r
-                if hasattr(entry, "title"):
-                    title = entry.title
-                    rule = getattr(entry, "rule", None)
-                elif isinstance(entry, dict):
-                    title = entry.get("title", "")
-                    rule = entry.get("rule")
-                else:
-                    continue
+            for r in report.results:
+                entry = r.entry  # SearchResult.entry is a dict
+                title = entry.get("title", "")
+                rule = entry.get("rule")
 
                 line = f"  - {title}"
                 if rule:
                     line += f" | Rule: {rule}"
                 lines.append(line)
 
-            print("\n".join(lines))
+            print(json.dumps({"additionalContext": "\n".join(lines)}))
     except Exception:
         # Never block edits due to search failures
         pass

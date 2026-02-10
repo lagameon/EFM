@@ -114,9 +114,8 @@ def main():
 
     # Load config
     config_path = _MEMORY_DIR / "config.json"
-    config = {}
-    if config_path.exists():
-        config = json.loads(config_path.read_text())
+    from lib.config_presets import load_config
+    config = load_config(config_path)
 
     # --- Mode: --startup ---
     if args["startup"]:

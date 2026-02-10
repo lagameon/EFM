@@ -122,21 +122,23 @@ _ERROR_FIX_PATTERN = re.compile(
     r"(?:Error|ERROR|Fix|FIX|Fixed|Bug|BUG|Resolved)\s*[:：]\s*(.+)", re.MULTILINE
 )
 
+# Markdown cleanup patterns (precompiled for performance)
+_RE_PIPE = re.compile(r'\|')
+_RE_BOLD_ITALIC = re.compile(r'\*{1,2}')
+_RE_BACKTICK = re.compile(r'`')
+_RE_HRULE = re.compile(r'^-{3,}$', re.MULTILINE)
+_RE_HEADING = re.compile(r'^#{1,6}\s*')
+_RE_WHITESPACE = re.compile(r'\s+')
+
 
 def _clean_markdown_artifacts(text: str) -> str:
     """Remove markdown formatting artifacts from extracted text."""
-    # Remove pipe table separators
-    text = re.sub(r'\|', ' ', text)
-    # Remove bold/italic markers
-    text = re.sub(r'\*{1,2}', '', text)
-    # Remove backticks
-    text = re.sub(r'`', '', text)
-    # Remove horizontal rules
-    text = re.sub(r'^-{3,}$', '', text, flags=re.MULTILINE)
-    # Remove heading markers at start of text
-    text = re.sub(r'^#{1,6}\s*', '', text)
-    # Collapse whitespace
-    text = re.sub(r'\s+', ' ', text).strip()
+    text = _RE_PIPE.sub(' ', text)
+    text = _RE_BOLD_ITALIC.sub('', text)
+    text = _RE_BACKTICK.sub('', text)
+    text = _RE_HRULE.sub('', text)
+    text = _RE_HEADING.sub('', text)
+    text = _RE_WHITESPACE.sub(' ', text).strip()
     return text
 
 

@@ -907,8 +907,17 @@ _CHECKPOINT_FILE = "evolution_checkpoint.json"
 
 
 def _compute_entry_ids_hash(active: Dict[str, dict]) -> str:
-    """Compute a hash of sorted active entry IDs for change detection."""
-    key = ",".join(sorted(active.keys()))
+    """Compute a hash of active entries for change detection.
+
+    Includes content-sensitive fields (created_at, last_verified) so that
+    entry updates trigger re-analysis, not just additions/removals.
+    """
+    parts = []
+    for eid in sorted(active.keys()):
+        entry = active[eid]
+        fingerprint = f"{eid}:{entry.get('created_at', '')}:{entry.get('last_verified', '')}"
+        parts.append(fingerprint)
+    key = "|".join(parts)
     return hashlib.sha256(key.encode()).hexdigest()[:16]
 
 

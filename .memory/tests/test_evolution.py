@@ -25,6 +25,7 @@ from lib.evolution import (
     MergeSuggestion,
     EvolutionReport,
     _UnionFind,
+    _compute_entry_ids_hash,
     calculate_confidence,
     find_duplicates,
     suggest_deprecations,
@@ -947,6 +948,45 @@ class TestBuildEvolutionReportDeprecated(unittest.TestCase):
         self.assertEqual(report.total_entries, 2)
         self.assertEqual(report.active_entries, 1)
         self.assertEqual(report.deprecated_entries, 1)
+
+
+# ---------------------------------------------------------------------------
+# TestEntryIdsHash
+# ---------------------------------------------------------------------------
+
+class TestEntryIdsHash(unittest.TestCase):
+    def test_hash_changes_on_content_update(self):
+        """Hash should differ when entry content changes (last_verified updated)."""
+        entries_v1 = {
+            "lesson-test-00000001": {
+                "id": "lesson-test-00000001",
+                "created_at": "2026-01-01T00:00:00Z",
+                "last_verified": None,
+            }
+        }
+        entries_v2 = {
+            "lesson-test-00000001": {
+                "id": "lesson-test-00000001",
+                "created_at": "2026-01-01T00:00:00Z",
+                "last_verified": "2026-02-01T00:00:00Z",
+            }
+        }
+        hash1 = _compute_entry_ids_hash(entries_v1)
+        hash2 = _compute_entry_ids_hash(entries_v2)
+        self.assertNotEqual(hash1, hash2)
+
+    def test_hash_stable_for_same_content(self):
+        """Same entries should always produce the same hash."""
+        entries = {
+            "lesson-test-00000001": {
+                "id": "lesson-test-00000001",
+                "created_at": "2026-01-01T00:00:00Z",
+                "last_verified": None,
+            }
+        }
+        hash1 = _compute_entry_ids_hash(entries)
+        hash2 = _compute_entry_ids_hash(entries)
+        self.assertEqual(hash1, hash2)
 
 
 if __name__ == "__main__":
