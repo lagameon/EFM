@@ -123,6 +123,39 @@ _ERROR_FIX_PATTERN = re.compile(
 )
 
 
+def _clean_markdown_artifacts(text: str) -> str:
+    """Remove markdown formatting artifacts from extracted text."""
+    # Remove pipe table separators
+    text = re.sub(r'\|', ' ', text)
+    # Remove bold/italic markers
+    text = re.sub(r'\*{1,2}', '', text)
+    # Remove backticks
+    text = re.sub(r'`', '', text)
+    # Remove horizontal rules
+    text = re.sub(r'^-{3,}$', '', text, flags=re.MULTILINE)
+    # Remove heading markers at start of text
+    text = re.sub(r'^#{1,6}\s*', '', text)
+    # Collapse whitespace
+    text = re.sub(r'\s+', ' ', text).strip()
+    return text
+
+
+def _is_viable_candidate(title: str, content: list, min_length: int = 15) -> bool:
+    """Check if a harvest candidate meets minimum quality standards."""
+    # Reject short titles
+    if len(title.strip()) < min_length:
+        return False
+    # Reject content that's only boilerplate (no substantive text at all)
+    real_content = [
+        c for c in content
+        if not c.startswith("Extracted via:")
+        and not c.startswith("Auto-harvested from")
+    ]
+    if not real_content:
+        return False
+    return True
+
+
 # ---------------------------------------------------------------------------
 # Template generators
 # ---------------------------------------------------------------------------
@@ -558,6 +591,7 @@ def _extract_candidates(
     # Pattern 1: Explicit LESSON: markers
     for match in _LESSON_PATTERN.finditer(text):
         title = match.group(1).strip()
+        title = _clean_markdown_artifacts(title)
         if title and title not in seen_titles:
             seen_titles.add(title)
             candidates.append(HarvestCandidate(
@@ -573,6 +607,7 @@ def _extract_candidates(
     # Pattern 2: Explicit CONSTRAINT/INVARIANT: markers
     for match in _CONSTRAINT_PATTERN.finditer(text):
         title = match.group(1).strip()
+        title = _clean_markdown_artifacts(title)
         if title and title not in seen_titles:
             seen_titles.add(title)
             candidates.append(HarvestCandidate(
@@ -588,6 +623,7 @@ def _extract_candidates(
     # Pattern 3: Explicit DECISION: markers
     for match in _DECISION_PATTERN.finditer(text):
         title = match.group(1).strip()
+        title = _clean_markdown_artifacts(title)
         if title and title not in seen_titles:
             seen_titles.add(title)
             candidates.append(HarvestCandidate(
@@ -603,6 +639,7 @@ def _extract_candidates(
     # Pattern 4: WARNING/RISK markers
     for match in _WARNING_PATTERN.finditer(text):
         title = match.group(1).strip()
+        title = _clean_markdown_artifacts(title)
         if title and title not in seen_titles:
             seen_titles.add(title)
             candidates.append(HarvestCandidate(
@@ -618,6 +655,9 @@ def _extract_candidates(
     # Pattern 5: MUST/NEVER/ALWAYS statements (if not already captured)
     for match in _MUST_PATTERN.finditer(text):
         statement = match.group(1).strip()
+        statement = _clean_markdown_artifacts(statement)
+        if len(statement) < 15:
+            continue
         if statement and statement not in seen_titles:
             # Check not already captured by other patterns
             if not any(statement in c.title for c in candidates):
@@ -635,6 +675,7 @@ def _extract_candidates(
     # Pattern 6: Error/Fix patterns → lesson candidates
     for match in _ERROR_FIX_PATTERN.finditer(text):
         title = match.group(1).strip()
+        title = _clean_markdown_artifacts(title)
         if title and title not in seen_titles:
             seen_titles.add(title)
             candidates.append(HarvestCandidate(
@@ -716,7 +757,17 @@ def _compute_extraction_confidence(candidate: HarvestCandidate) -> float:
     if candidate.rule:
         score += 0.05
 
-    return min(1.0, round(score, 2))
+    # Penalties for low-quality indicators
+    if not candidate.rule and not candidate.implication:
+        score -= 0.15
+    if len(candidate.title) < 20:
+        score -= 0.05
+    # Content that just repeats title
+    real_content = [c for c in candidate.content if not c.startswith("Extracted via:")]
+    if len(real_content) == 1 and real_content[0].strip() == candidate.title.strip():
+        score -= 0.10
+
+    return max(0.0, min(1.0, round(score, 2)))
 
 
 def _convert_candidate_to_entry(
@@ -818,6 +869,7 @@ def auto_harvest_and_persist(
     config: dict,
     run_pipeline_after: bool = True,
     draft_only: bool = False,
+    conversation_id: Optional[str] = None,
 ) -> dict:
     """Full closed-loop automation: harvest → convert → write → pipeline → clear.
 
@@ -865,17 +917,53 @@ def auto_harvest_and_persist(
     # Pre-load entries once to avoid re-reading events.jsonl per candidate
     preloaded = _load_entries_latest_wins(events_path) if events_path.exists() else {}
 
+    # Session-level dedup: skip entries already written by this conversation
+    session_ids_written: set = set()
+    if conversation_id and events_path.exists():
+        try:
+            with open(events_path, "r", encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        existing = json.loads(line)
+                        meta = existing.get("_meta", {})
+                        if meta.get("conversation_id") == conversation_id:
+                            session_ids_written.add(existing.get("id", ""))
+                    except json.JSONDecodeError:
+                        continue
+        except OSError:
+            pass
+    if conversation_id:
+        result["session_dedup_skipped"] = 0
+
     valid_entries = []
     for candidate in harvest_report.candidates:
         try:
             entry = _convert_candidate_to_entry(candidate, project_root)
+
+            # Session-level dedup: skip if this conversation already wrote this entry
+            if conversation_id and entry["id"] in session_ids_written:
+                result["entries_skipped"] += 1
+                result["session_dedup_skipped"] += 1
+                logger.info(f"Session dedup skipped '{candidate.title[:50]}': already written in this conversation")
+                continue
+
+            # Quality gate: reject low-quality candidates
+            min_content_length = config.get("automation", {}).get("min_content_length", 15)
+            if not _is_viable_candidate(candidate.title, entry["content"], min_content_length):
+                result["entries_skipped"] += 1
+                logger.info(f"Quality gate rejected '{candidate.title[:50]}': below minimum standards")
+                continue
+
             # Schema validation
             vr = validate_schema(entry)
             if not vr.valid:
                 result["entries_skipped"] += 1
                 logger.warning(
                     f"Skipped invalid entry '{candidate.title}': "
-                    f"{[c.message for c in vr.checks if not c.passed]}"
+                    f"{vr.errors}"
                 )
                 continue
 
@@ -943,6 +1031,8 @@ def auto_harvest_and_persist(
         try:
             with open(events_path, "a") as f:
                 for entry in entries_to_write:
+                    if conversation_id:
+                        entry.setdefault("_meta", {})["conversation_id"] = conversation_id
                     f.write(json.dumps(entry, ensure_ascii=False) + "\n")
             result["entries_written"] = len(entries_to_write)
         except Exception as e:

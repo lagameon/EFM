@@ -108,6 +108,9 @@ def main():
             session_complete = is_session_complete(working_dir)
             require_complete = v3_config.get("require_complete_for_harvest", False)
 
+            # Extract conversation ID for session-level dedup
+            conversation_id = input_data.get("conversation_id")
+
             events_path = _MEMORY_DIR / "events.jsonl"
             report = auto_harvest_and_persist(
                 working_dir=working_dir,
@@ -116,6 +119,7 @@ def main():
                 config=config,
                 run_pipeline_after=True,
                 draft_only=require_complete and not session_complete,
+                conversation_id=conversation_id,
             )
 
             status_label = "complete" if session_complete else "partial"

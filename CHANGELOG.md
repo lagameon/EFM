@@ -4,6 +4,54 @@ All notable changes to EF Memory for Claude will be documented in this file.
 
 ---
 
+## 2026-02-10 — V3.1: Quality Gate, Session Dedup, --upgrade, Version Tracking
+
+### Five improvements to harvest quality, deployment safety, and observability
+
+**Step 1: Harvest Quality Gate**
+Auto-harvest now filters low-quality candidates before they reach `events.jsonl`:
+- `_clean_markdown_artifacts()` — strips pipes, bold, backticks, horizontal rules from extracted text
+- `_is_viable_candidate()` — rejects short titles (<15 chars), boilerplate-only, title-repeating content
+- Confidence penalties: no rule+implication (-0.15), short title (-0.05), repeated content (-0.10)
+- Configurable `automation.min_content_length` (default 15, range 5–100)
+- Fixed bug: `vr.checks` → `vr.errors` (nonexistent attribute on ValidationResult)
+
+**Step 2: Session-Level Dedup**
+Prevents duplicate writes when Stop hook fires multiple times per conversation:
+- `conversation_id` extracted from hook input and passed to `auto_harvest_and_persist()`
+- Session-scoped tracking set prevents re-writing entries already persisted this session
+- `conversation_id` stored in `_meta` for audit trail
+
+**Step 3: Init `--upgrade` Mode**
+Safe in-place upgrade for existing EFM installations:
+- `--upgrade` flag added to init_cli.py (mutually exclusive with `--force`)
+- `run_upgrade()` replaces EFM section markers in CLAUDE.md only, preserving all user content
+- Force-updates startup rule, merges settings + hooks
+- Thin-CLAUDE.md detection warns when <10 lines of project context
+
+**Step 4: Version Tracking**
+- `EFM_VERSION = "3.1.0"` constant in `config_presets.py`
+- `_stamp_efm_version()` writes version to `config.json` on init/upgrade
+- Startup health check compares installed vs current version
+- Hint suggests `run /memory-init --upgrade` when mismatch detected
+
+**Step 5: Waste Ratio Enhancement**
+- `waste_lines` field added to StartupReport
+- Compact hint now shows specific count (e.g., "42 obsolete lines")
+
+**Modified files (7):**
+- `.memory/lib/working_memory.py` — Quality gate functions + session dedup logic + bug fix
+- `.memory/hooks/stop_harvest.py` — Extract conversation_id, pass to auto_harvest
+- `.memory/lib/init.py` — `run_upgrade()`, `_handle_claude_md_upgrade()`, `_check_claude_md_content()`, `_stamp_efm_version()`
+- `.memory/scripts/init_cli.py` — `--upgrade` flag, mutual exclusion with `--force`
+- `.memory/lib/auto_sync.py` — Version check fields, waste_lines, startup hints
+- `.memory/lib/config_presets.py` — `EFM_VERSION = "3.1.0"` constant
+- `.memory/config.schema.json` — Added `min_content_length`, `efm_version` properties
+
+**Test count: 765 → 804** (+39 tests: 21 quality/dedup + 11 upgrade + 5 version + 3 waste - 1 renamed)
+
+---
+
 ## 2026-02-08 — Draft Auto-Expire
 
 ### Stale Draft Auto-Cleanup

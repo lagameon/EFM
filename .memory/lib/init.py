@@ -421,6 +421,31 @@ def _count_entries(events_path: Path) -> int:
 
 
 # ---------------------------------------------------------------------------
+# Version stamping
+# ---------------------------------------------------------------------------
+
+def _stamp_efm_version(config_path: Path) -> None:
+    """Write the current EFM_VERSION into config.json's efm_version field.
+
+    Called after run_init() and run_upgrade() to track installed version.
+    """
+    try:
+        from .config_presets import EFM_VERSION
+    except ImportError:
+        return
+
+    try:
+        if config_path.exists():
+            raw = json.loads(config_path.read_text())
+        else:
+            raw = {}
+        raw["efm_version"] = EFM_VERSION
+        config_path.write_text(json.dumps(raw, indent=2) + "\n")
+    except (json.JSONDecodeError, OSError) as exc:
+        logger.warning("Could not stamp efm_version: %s", exc)
+
+
+# ---------------------------------------------------------------------------
 # Main init orchestrator
 # ---------------------------------------------------------------------------
 
@@ -477,6 +502,10 @@ def run_init(
 
     # --- 5. Project scan (advisory) ---
     report.suggestions = scan_project(project_root)
+
+    # Stamp version
+    if not dry_run:
+        _stamp_efm_version(project_root / ".memory" / "config.json")
 
     report.duration_ms = (time.monotonic() - start_time) * 1000
     return report
@@ -626,6 +655,138 @@ def _handle_settings_json(
             settings_path.write_text(json.dumps(merged, indent=2) + "\n")
         report.files_created.append(rel_path)
         logger.info("Created settings.local.json")
+
+
+def run_upgrade(
+    project_root: Path,
+    config: dict,
+    dry_run: bool = False,
+) -> InitReport:
+    """
+    Upgrade an existing EFM installation without overwriting user content.
+    
+    Updates:
+    - .claude/rules/ef-memory-startup.md (force regenerate)
+    - CLAUDE.md EFM section only (preserve user content)
+    - .claude/settings.local.json (merge hooks + permissions)
+    - .claude/hooks.json (merge)
+    
+    Does NOT touch:
+    - events.jsonl
+    - config.json content (except version stamp)
+    - working/ directory
+    - drafts/
+    """
+    report = InitReport(dry_run=dry_run)
+    start_time = time.monotonic()
+
+    events_path = project_root / ".memory" / "events.jsonl"
+    entry_count = _count_entries(events_path)
+
+    claude_dir = project_root / ".claude"
+    rules_dir = claude_dir / "rules"
+
+    if not dry_run:
+        claude_dir.mkdir(parents=True, exist_ok=True)
+        rules_dir.mkdir(parents=True, exist_ok=True)
+
+    # 1. Force-update startup rule
+    _handle_startup_rule(rules_dir, config, entry_count, force=True, dry_run=dry_run, report=report)
+
+    # 2. Upgrade CLAUDE.md EFM section only
+    _handle_claude_md_upgrade(project_root, config, entry_count, dry_run, report)
+
+    # 3. Merge settings.local.json
+    _handle_settings_json(claude_dir, dry_run, report)
+
+    # 4. Merge hooks.json
+    _handle_hooks_json(claude_dir, dry_run, report)
+
+    # 5. Check CLAUDE.md content quality
+    _check_claude_md_content(project_root, report)
+
+    # 6. Project scan (advisory)
+    report.suggestions = scan_project(project_root)
+
+    # Stamp version
+    if not dry_run:
+        _stamp_efm_version(project_root / ".memory" / "config.json")
+
+    report.duration_ms = (time.monotonic() - start_time) * 1000
+    return report
+
+
+def _handle_claude_md_upgrade(
+    project_root: Path,
+    config: dict,
+    entry_count: int,
+    dry_run: bool,
+    report: InitReport,
+) -> None:
+    """Upgrade CLAUDE.md: replace only EFM section, preserve all user content."""
+    claude_md_path = project_root / "CLAUDE.md"
+    rel_path = "CLAUDE.md"
+    new_section = generate_ef_memory_section(config, entry_count)
+
+    if claude_md_path.exists():
+        existing = claude_md_path.read_text()
+
+        if _EFM_SECTION_START in existing:
+            # Replace just the EFM section
+            new_content = _replace_efm_section(existing, new_section)
+            if not dry_run:
+                claude_md_path.write_text(new_content)
+            report.files_merged.append(rel_path)
+            logger.info("Upgraded EFM section in CLAUDE.md (preserved user content)")
+        else:
+            # No EFM section — append
+            new_content = existing.rstrip() + "\n\n---\n\n" + new_section + "\n"
+            if not dry_run:
+                claude_md_path.write_text(new_content)
+            report.files_merged.append(rel_path)
+            logger.info("Appended EFM section to existing CLAUDE.md")
+    else:
+        # No CLAUDE.md — create with just EFM section + warning
+        content = generate_claude_md(config, entry_count)
+        if not dry_run:
+            claude_md_path.write_text(content)
+        report.files_created.append(rel_path)
+        report.warnings.append(
+            "Created CLAUDE.md with only EFM section. "
+            "Add project architecture, commands, and rules above the EFM section."
+        )
+        logger.info("Created CLAUDE.md (EFM only — needs project context)")
+
+
+def _check_claude_md_content(project_root: Path, report: InitReport) -> None:
+    """Check if CLAUDE.md has meaningful project content above the EFM section.
+    
+    Warns if there are fewer than 10 non-empty lines before the EFM markers,
+    suggesting the user add project architecture, commands, and rules.
+    """
+    claude_md_path = project_root / "CLAUDE.md"
+    if not claude_md_path.exists():
+        return
+
+    content = claude_md_path.read_text()
+    start_idx = content.find(_EFM_SECTION_START)
+    
+    if start_idx == -1:
+        return  # No EFM section — nothing to check
+
+    # Count non-empty lines before the EFM section
+    before_section = content[:start_idx]
+    non_empty_lines = [
+        line for line in before_section.splitlines()
+        if line.strip() and not line.strip().startswith("---")
+    ]
+
+    if len(non_empty_lines) < 10:
+        report.warnings.append(
+            f"CLAUDE.md has only {len(non_empty_lines)} lines of project context before "
+            f"the EFM section. Consider adding: project overview, build commands, "
+            f"architecture description, and coding rules."
+        )
 
 
 # ---------------------------------------------------------------------------

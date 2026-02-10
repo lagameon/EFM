@@ -41,9 +41,17 @@ python3 .memory/scripts/init_cli.py --dry-run
 # Force update existing EF Memory sections
 python3 .memory/scripts/init_cli.py --force
 
+# Safe in-place upgrade (preserves user content)
+python3 .memory/scripts/init_cli.py --upgrade
+
+# Preview upgrade without writing files
+python3 .memory/scripts/init_cli.py --upgrade --dry-run
+
 # Init a different project
 python3 .memory/scripts/init_cli.py --target /path/to/project
 ```
+
+Note: `--force` and `--upgrade` are mutually exclusive.
 
 ---
 
@@ -63,6 +71,15 @@ python3 .memory/scripts/init_cli.py --target /path/to/project
   **and all 5 automation hooks** (SessionStart, PreToolUse:Edit|Write, PreToolUse:EnterPlanMode,
   Stop harvest/scan, PreCompact). Never removes existing permissions or hooks.
 - **ef-memory-startup.md**: Always written (EFM-owned file).
+
+### For upgrades (`--upgrade`)
+- **CLAUDE.md**: Replaces only the EFM section (between `<!-- EF-MEMORY-START -->` and `<!-- EF-MEMORY-END -->` markers), preserving all user content. If no markers exist, appends. If no CLAUDE.md exists, creates with warning.
+- **ef-memory-startup.md**: Force-updated (EFM-owned file).
+- **settings.local.json**: Merges hooks + permissions (same as init).
+- **hooks.json**: Merges (same as init).
+- **Version stamp**: Writes current `EFM_VERSION` into `config.json`.
+- **Content check**: Warns if CLAUDE.md has fewer than 10 non-empty lines before the EFM section (thin project context).
+- Does **NOT** touch: `events.jsonl`, `config.json` content (except version stamp), `working/`, `drafts/`.
 
 ### Post-init scan
 After writing files, scans the project for advisory suggestions:
@@ -132,8 +149,9 @@ Init is idempotent. Running it again:
 - Merges safely into hooks.json and settings.local.json
 - Auto-scan only triggers if new unimported documents are found
 
-Use `--force` to refresh EF Memory sections (e.g., after config changes
-or version upgrades).
+Use `--force` to refresh all EF Memory sections (full overwrite), or
+`--upgrade` for safe in-place upgrade (replaces only EFM markers,
+preserves user content, stamps version).
 
 ---
 

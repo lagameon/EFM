@@ -79,6 +79,10 @@ class StartupReport:
     staleness_threshold_days: int = 90    # Used in hint formatting
     compaction_suggested: bool = False
     waste_ratio: float = 0.0
+    waste_lines: int = 0
+    efm_version_current: str = ""      # Version from config_presets.EFM_VERSION
+    efm_version_installed: str = ""    # Version from config.json's efm_version field
+    update_available: bool = False
     hint: str = ""
     duration_ms: float = 0.0
 
@@ -521,11 +525,24 @@ def check_startup(
         active_count = len(active_entries)
         if active_count > 0:
             report.waste_ratio = round(total_lines / active_count, 2)
+            report.waste_lines = total_lines - active_count
         elif total_lines > 0:
             report.waste_ratio = float(total_lines)
         report.compaction_suggested = report.waste_ratio >= compact_threshold
     except Exception:
         pass  # Compaction stats unavailable — skip silently
+
+    # Version check
+    try:
+        from .config_presets import EFM_VERSION
+        report.efm_version_current = EFM_VERSION
+        report.efm_version_installed = config.get("efm_version", "")
+        if report.efm_version_installed and report.efm_version_installed != EFM_VERSION:
+            report.update_available = True
+        elif not report.efm_version_installed:
+            report.update_available = True  # No version stamp = needs upgrade
+    except ImportError:
+        pass
 
     threshold = config.get("verify", {}).get("staleness_threshold_days", 90)
     report.staleness_threshold_days = threshold
@@ -621,7 +638,17 @@ def _format_hint(report: StartupReport, memory_dir: Optional[Path] = None) -> st
         parts.append(f"{report.stale_entries} stale entries (>{report.staleness_threshold_days}d)")
 
     if report.compaction_suggested:
-        parts.append(f"compact suggested ({report.waste_ratio:.1f}x waste)")
+        if report.waste_lines > 0:
+            parts.append(f"compact suggested ({report.waste_lines} obsolete lines, {report.waste_ratio:.1f}x waste)")
+        else:
+            parts.append(f"compact suggested ({report.waste_ratio:.1f}x waste)")
+
+    if report.update_available:
+        installed = report.efm_version_installed or "unknown"
+        parts.append(
+            f"update available: {installed} → {report.efm_version_current} "
+            f"(run /memory-init --upgrade)"
+        )
 
     if parts:
         return f"EF Memory: {' / '.join(parts)}"

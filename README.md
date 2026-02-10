@@ -191,7 +191,7 @@ Or tell Claude: **"turn off memory review"** / **"turn on memory review"**
 | `/memory-search` | Query existing memory | Never |
 | `/memory-verify` | Check integrity (static analysis) | Never |
 | `/memory-plan` | Working memory session management (V3) | `.memory/working/` session files |
-| `/memory-init` | Initialize auto-startup files (V3) | `CLAUDE.md`, `.claude/rules/`, `settings.local.json` (permissions + 5 hooks), `hooks.json` (legacy) |
+| `/memory-init` | Initialize auto-startup files (V3); `--upgrade` for safe in-place upgrade | `CLAUDE.md`, `.claude/rules/`, `settings.local.json` (permissions + 5 hooks), `hooks.json` (legacy) |
 | `/memory-evolve` | Memory health & evolution analysis (V3) | Never (read-only report) |
 | `/memory-reason` | Cross-memory reasoning analysis (V3) | Never (read-only report) |
 | `/memory-compact` | Compact events.jsonl + archive history (V3) | `events.jsonl` (rewrite), `archive/` (append) |
@@ -301,10 +301,13 @@ One-command initialization generates all Claude Code integration files. Safe mer
 python3 .memory/scripts/init_cli.py                    # Init current project
 python3 .memory/scripts/init_cli.py --dry-run           # Preview changes
 python3 .memory/scripts/init_cli.py --force             # Overwrite existing files
+python3 .memory/scripts/init_cli.py --upgrade            # Safe in-place upgrade (preserves user content)
 python3 .memory/scripts/init_cli.py --target /path/to   # Init another project
 ```
 
 Generated files: `CLAUDE.md` (EF Memory section), `.claude/rules/ef-memory-startup.md`, `.claude/settings.local.json` (permissions + 5 automation hooks), `.claude/hooks.json` (legacy pre-compact).
+
+**`--upgrade` mode** (V3.1): Safely updates an existing EFM installation. Replaces only the EFM section markers in CLAUDE.md (preserves all user content), force-updates the startup rule, merges hooks and settings. Does NOT touch `events.jsonl`, `config.json` content, `working/`, or `drafts/`. Stamps the current EFM version. Warns if CLAUDE.md has thin project context (<10 lines before EFM section).
 
 ### M8: Working Memory (PWF Integration)
 Session-scoped working memory inspired by Planning with Files. Three markdown files (`task_plan.md`, `findings.md`, `progress.md`) in `.memory/working/` act as short-term RAM while EF Memory serves as long-term disk.
@@ -397,6 +400,49 @@ compact(events_path, archive_dir, config)
 
 ---
 
+## V3.1 Quality & Lifecycle Improvements
+
+Five improvements to harvest quality, deployment safety, and observability:
+
+### Harvest Quality Gate (Step 1)
+Auto-harvest now filters low-quality candidates before writing to `events.jsonl`. Two new functions guard the pipeline:
+
+- **`_clean_markdown_artifacts()`** — strips pipe chars, bold markers, backticks, horizontal rules from extracted text
+- **`_is_viable_candidate()`** — rejects entries with short titles (<15 chars), boilerplate-only content, or title-repeating content
+- **Confidence penalties** — entries without `rule` AND `implication` get -0.15; short titles get -0.05; content that repeats the title gets -0.10
+
+Configurable: `automation.min_content_length` (default 15, range 5–100) in `config.json`.
+
+### Session-Level Dedup (Step 2)
+Prevents duplicate entries when the Stop hook fires multiple times in the same conversation. Uses `conversation_id` from hook input to track which entries have already been written in the current session. The conversation ID is stored in `_meta.conversation_id` for audit.
+
+### Init `--upgrade` Mode (Step 3)
+Safe upgrade path for existing EFM installations:
+
+```bash
+python3 .memory/scripts/init_cli.py --upgrade           # Upgrade in-place
+python3 .memory/scripts/init_cli.py --upgrade --dry-run  # Preview upgrade
+```
+
+- Replaces only the EFM section markers in CLAUDE.md (preserves user content)
+- Force-updates `.claude/rules/ef-memory-startup.md`
+- Merges settings and hooks (never removes existing)
+- Stamps `efm_version` in `config.json`
+- Warns on thin CLAUDE.md (<10 lines of project context)
+- Mutually exclusive with `--force`
+
+### Version Tracking (Step 4)
+EFM now tracks its installed version (`EFM_VERSION = "3.1.0"` in `config_presets.py`):
+
+- `init` and `--upgrade` stamp `efm_version` into `config.json`
+- Startup health check compares installed vs. current version
+- When a mismatch is detected, the startup hint suggests: `run /memory-init --upgrade`
+
+### Waste Ratio Enhancement (Step 5)
+Startup hint now shows specific waste line counts when suggesting compaction. Instead of a generic message, users see exactly how many obsolete lines exist (e.g., "42 obsolete lines"), making it easier to decide whether to compact.
+
+---
+
 ## Automation & Hooks
 
 EF Memory uses **Claude Code hooks** for event-driven automation — no background daemons or cron jobs.
@@ -408,7 +454,7 @@ EF Memory uses **Claude Code hooks** for event-driven automation — no backgrou
 | **SessionStart** | Session begins | `session_start.sh` | Startup health check (<100ms) |
 | **PreToolUse: Edit\|Write** | Before file edit | `pre_edit_search.py` | Search memory for relevant entries |
 | **PreToolUse: EnterPlanMode** | Plan mode entry | `plan_start.py` | Auto-start working memory session |
-| **Stop** | Response complete | `stop_harvest.py` | Auto-harvest session OR scan conversation → drafts; auto-compact if waste ratio ≥ threshold |
+| **Stop** | Response complete | `stop_harvest.py` | Auto-harvest session (with quality gate + session dedup) OR scan conversation → drafts; auto-compact if waste ratio ≥ threshold |
 | **PreCompact** | Context compaction | echo | Reminder to preserve session state |
 
 ### Pipeline Steps
@@ -438,7 +484,8 @@ reasoning_check  → Cross-memory correlation, contradiction detection, synthesi
   },
   "automation": {
     "human_review_required": false,  // Auto-persist after validation
-    "pipeline_steps": ["sync_embeddings", "generate_rules", "evolution_check", "reasoning_check"]
+    "pipeline_steps": ["sync_embeddings", "generate_rules", "evolution_check", "reasoning_check"],
+    "min_content_length": 15         // Quality gate: minimum title length for auto-harvest
   },
   "compaction": {
     "auto_suggest_threshold": 2.0,   // Waste ratio to trigger auto-compact
@@ -758,13 +805,14 @@ Additional path keys (e.g., `FEATURE_ROOTS`, `DEPLOYMENT_ROOTS`) can be added fo
 │   ├── generate_rules.py  #   Hard entry → .claude/rules/ bridge
 │   ├── auto_verify.py     #   Schema/source/staleness/dedup validation
 │   ├── auto_capture.py    #   Draft queue management
-│   ├── auto_sync.py       #   Pipeline orchestration + harvest
+│   ├── auto_sync.py       #   Pipeline orchestration + harvest + version check
 │   ├── evolution.py       #   Memory health & lifecycle (M5)
 │   ├── llm_provider.py    #   Multi-provider LLM abstraction (M6)
 │   ├── prompts.py         #   LLM prompt templates (M6)
 │   ├── reasoning.py       #   LLM reasoning engine (M6)
 │   ├── scanner.py         #   Batch document scanner
-│   ├── init.py            #   Project init & auto-startup (V3 M7)
+│   ├── config_presets.py   #   Configuration presets + EFM_VERSION constant
+│   ├── init.py            #   Project init, --upgrade & auto-startup (V3 M7)
 │   ├── working_memory.py  #   Working memory + auto-harvest (V3 M8-M9)
 │   ├── transcript_scanner.py # Conversation transcript scan → drafts (V3 M10)
 │   └── compaction.py      #   events.jsonl compaction + archive (V3 M11)
@@ -781,7 +829,7 @@ Additional path keys (e.g., `FEATURE_ROOTS`, `DEPLOYMENT_ROOTS`) can be added fo
 │   ├── init_cli.py        #   V3: project init CLI
 │   ├── working_memory_cli.py  #  V3: working memory CLI
 │   └── compact_cli.py     #   V3: compaction CLI (--stats, --dry-run)
-└── tests/                 # 731 unit tests
+└── tests/                 # 804 unit tests
     ├── conftest.py
     ├── test_text_builder.py
     ├── test_vectordb.py
@@ -795,7 +843,8 @@ Additional path keys (e.g., `FEATURE_ROOTS`, `DEPLOYMENT_ROOTS`) can be added fo
     ├── test_llm_provider.py
     ├── test_reasoning.py
     ├── test_scanner.py     #   Batch scanner tests
-    ├── test_init.py        #   V3: init + hooks tests
+    ├── test_config_presets.py #  Config presets + version tests
+    ├── test_init.py        #   V3: init + upgrade + hooks tests
     ├── test_working_memory.py  #  V3: working memory + auto-harvest tests
     ├── test_lifecycle.py   #   V3: lifecycle automation tests
     ├── test_transcript_scanner.py # V3: conversation scan → drafts tests
@@ -919,5 +968,6 @@ MIT — see [LICENSE](LICENSE).
 |-----------|---------|
 | Schema | 1.1 |
 | Config | 1.5 |
+| EFM Version | 3.1.0 |
 | Commands | 1.3 (10 slash commands) |
-| V3 Engine | M11 (731 tests) |
+| V3 Engine | M11 (804 tests) |

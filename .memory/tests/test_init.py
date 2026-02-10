@@ -31,6 +31,7 @@ from lib.init import (
     generate_startup_rule,
     merge_settings_json,
     run_init,
+    run_upgrade,
     scan_project,
 )
 
@@ -825,6 +826,129 @@ class TestInitReport(unittest.TestCase):
         self.assertEqual(report.files_created, ["a.md"])
         self.assertTrue(report.dry_run)
         self.assertEqual(report.duration_ms, 42.5)
+
+
+
+# ===========================================================================
+# Test: run_upgrade (Step 3)
+# ===========================================================================
+
+class TestRunUpgrade(unittest.TestCase):
+    """Tests for the --upgrade init mode."""
+
+    def setUp(self):
+        self.tmpdir = tempfile.mkdtemp()
+        self.project_root = Path(self.tmpdir)
+        memory_dir = self.project_root / ".memory"
+        memory_dir.mkdir()
+        _write_events(memory_dir / "events.jsonl", 5)
+        self.config = _make_config()
+        # Do initial init
+        run_init(self.project_root, self.config)
+
+    def tearDown(self):
+        import shutil
+        shutil.rmtree(self.tmpdir)
+
+    def test_upgrade_updates_startup_rule(self):
+        # Modify startup rule to simulate old version
+        rule_path = self.project_root / ".claude" / "rules" / "ef-memory-startup.md"
+        rule_path.write_text("# Old startup rule content\n")
+
+        report = run_upgrade(self.project_root, self.config)
+        content = rule_path.read_text()
+        self.assertIn("Session Awareness", content)
+        self.assertIn(".claude/rules/ef-memory-startup.md", report.files_merged)
+
+    def test_upgrade_preserves_user_claude_md(self):
+        # Add user content above EFM section
+        claude_md = self.project_root / "CLAUDE.md"
+        existing = claude_md.read_text()
+        user_content = "# My Project\n\nThis is my project description.\n\n## Build Commands\n\n```bash\nnpm install\n```\n\n---\n\n"
+        claude_md.write_text(user_content + existing)
+
+        report = run_upgrade(self.project_root, self.config)
+        new_content = claude_md.read_text()
+        self.assertIn("My Project", new_content)
+        self.assertIn("npm install", new_content)
+
+    def test_upgrade_updates_efm_section(self):
+        # Add more events to change entry count
+        _write_events(self.project_root / ".memory" / "events.jsonl", 15)
+
+        report = run_upgrade(self.project_root, self.config)
+        content = (self.project_root / "CLAUDE.md").read_text()
+        self.assertIn("15 entries", content)
+
+    def test_upgrade_does_not_touch_events(self):
+        events_path = self.project_root / ".memory" / "events.jsonl"
+        original = events_path.read_text()
+
+        run_upgrade(self.project_root, self.config)
+        self.assertEqual(events_path.read_text(), original)
+
+    def test_upgrade_stamps_efm_version_in_config(self):
+        """Upgrade should stamp efm_version but preserve other config content."""
+        config_path = self.project_root / ".memory" / "config.json"
+        config_path.write_text('{"version": 3, "preset": "standard"}\n')
+
+        run_upgrade(self.project_root, self.config)
+        updated = json.loads(config_path.read_text())
+        # Original fields preserved
+        self.assertEqual(updated["version"], 3)
+        self.assertEqual(updated["preset"], "standard")
+        # Version stamp added
+        from lib.config_presets import EFM_VERSION
+        self.assertEqual(updated["efm_version"], EFM_VERSION)
+
+    def test_upgrade_merges_settings(self):
+        settings_path = self.project_root / ".claude" / "settings.local.json"
+        existing = json.loads(settings_path.read_text())
+        existing["permissions"]["allow"].append("Bash(custom:*)")
+        settings_path.write_text(json.dumps(existing))
+
+        run_upgrade(self.project_root, self.config)
+        updated = json.loads(settings_path.read_text())
+        self.assertIn("Bash(custom:*)", updated["permissions"]["allow"])
+        self.assertIn("Bash(python3:*)", updated["permissions"]["allow"])
+
+    def test_upgrade_warns_thin_claude_md(self):
+        # CLAUDE.md with only EFM section (no project context)
+        report = run_upgrade(self.project_root, self.config)
+        thin_warnings = [w for w in report.warnings if "project context" in w.lower()]
+        self.assertGreater(len(thin_warnings), 0)
+
+    def test_upgrade_no_warn_rich_claude_md(self):
+        # Add rich content
+        claude_md = self.project_root / "CLAUDE.md"
+        lines = [f"Line {i}: Important project information" for i in range(15)]
+        rich_content = "\n".join(lines) + "\n\n---\n\n"
+        existing_efm = generate_ef_memory_section(self.config, 5)
+        claude_md.write_text(rich_content + existing_efm + "\n")
+
+        report = run_upgrade(self.project_root, self.config)
+        thin_warnings = [w for w in report.warnings if "project context" in w.lower()]
+        self.assertEqual(len(thin_warnings), 0)
+
+    def test_upgrade_dry_run(self):
+        # Record current state
+        rule_path = self.project_root / ".claude" / "rules" / "ef-memory-startup.md"
+        original_rule = rule_path.read_text()
+
+        report = run_upgrade(self.project_root, self.config, dry_run=True)
+        self.assertTrue(report.dry_run)
+        # Files should not be modified
+        self.assertEqual(rule_path.read_text(), original_rule)
+
+    def test_upgrade_appends_efm_to_non_efm_project(self):
+        # Remove EFM markers from CLAUDE.md
+        claude_md = self.project_root / "CLAUDE.md"
+        claude_md.write_text("# My Project\n\nNo EFM section here.\n")
+
+        report = run_upgrade(self.project_root, self.config)
+        content = claude_md.read_text()
+        self.assertIn(_EFM_SECTION_START, content)
+        self.assertIn("My Project", content)
 
 
 if __name__ == "__main__":

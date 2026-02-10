@@ -4,7 +4,12 @@
   "title": "EF Memory Configuration",
   "description": "Configuration schema for EF Memory for Claude",
   "type": "object",
-  "required": ["version", "paths", "verify", "search"],
+  "required": [
+    "version",
+    "paths",
+    "verify",
+    "search"
+  ],
   "properties": {
     "$schema": {
       "type": "string",
@@ -17,8 +22,17 @@
     },
     "preset": {
       "type": "string",
-      "enum": ["minimal", "standard", "full"],
+      "enum": [
+        "minimal",
+        "standard",
+        "full"
+      ],
       "description": "Configuration preset. 'minimal' disables embeddings, reasoning, evolution; 'standard' enables core features with auto-harvest; 'full' enables all features including LLM reasoning. Individual settings override preset defaults."
+    },
+    "efm_version": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$",
+      "description": "Installed EFM version. Written by init/upgrade, read by startup check."
     },
     "hooks": {
       "type": "object",
@@ -38,22 +52,30 @@
       "properties": {
         "CODE_ROOTS": {
           "type": "array",
-          "items": {"type": "string"},
+          "items": {
+            "type": "string"
+          },
           "description": "Main source code directories"
         },
         "FEATURE_ROOTS": {
           "type": "array",
-          "items": {"type": "string"},
+          "items": {
+            "type": "string"
+          },
           "description": "Feature engineering directories"
         },
         "LABEL_ROOTS": {
           "type": "array",
-          "items": {"type": "string"},
+          "items": {
+            "type": "string"
+          },
           "description": "Label generation directories"
         },
         "DEPLOYMENT_ROOTS": {
           "type": "array",
-          "items": {"type": "string"},
+          "items": {
+            "type": "string"
+          },
           "description": "Deployment/production directories"
         },
         "DOCS_ROOT": {
@@ -67,18 +89,29 @@
       },
       "additionalProperties": {
         "oneOf": [
-          {"type": "string"},
-          {"type": "array", "items": {"type": "string"}}
+          {
+            "type": "string"
+          },
+          {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
         ]
       }
     },
     "verify": {
       "type": "object",
-      "required": ["rulesets"],
+      "required": [
+        "rulesets"
+      ],
       "properties": {
         "rulesets": {
           "type": "array",
-          "items": {"type": "string"},
+          "items": {
+            "type": "string"
+          },
           "description": "List of ruleset file paths to load"
         },
         "fail_on_missing_path": {
@@ -93,7 +126,9 @@
         },
         "allowed_commands": {
           "type": "array",
-          "items": {"type": "string"},
+          "items": {
+            "type": "string"
+          },
           "description": "Commands allowed in verify field (read-only only)"
         }
       }
@@ -109,12 +144,25 @@
         },
         "priority": {
           "type": "array",
-          "items": {"type": "string", "enum": ["hard", "soft"]},
+          "items": {
+            "type": "string",
+            "enum": [
+              "hard",
+              "soft"
+            ]
+          },
           "description": "Priority order for classification"
         },
         "severity_order": {
           "type": "array",
-          "items": {"type": "string", "enum": ["S1", "S2", "S3"]},
+          "items": {
+            "type": "string",
+            "enum": [
+              "S1",
+              "S2",
+              "S3"
+            ]
+          },
           "description": "Priority order for severity"
         }
       }
@@ -125,14 +173,26 @@
       "properties": {
         "supported_sources": {
           "type": "array",
-          "items": {"type": "string"},
-          "default": ["*.md", "*.py", "*.ts", "*.js", "*.go"],
+          "items": {
+            "type": "string"
+          },
+          "default": [
+            "*.md",
+            "*.py",
+            "*.ts",
+            "*.js",
+            "*.go"
+          ],
           "description": "File patterns supported for import (glob-style). Any document with extractable knowledge can be imported."
         },
         "doc_roots": {
           "type": "array",
-          "items": {"type": "string"},
-          "default": ["docs/"],
+          "items": {
+            "type": "string"
+          },
+          "default": [
+            "docs/"
+          ],
           "description": "Default document roots to scan for importable content"
         },
         "require_line_numbers": {
@@ -153,13 +213,19 @@
         },
         "provider": {
           "type": "string",
-          "enum": ["gemini", "openai", "ollama"],
+          "enum": [
+            "gemini",
+            "openai",
+            "ollama"
+          ],
           "default": "gemini",
           "description": "Primary embedding provider"
         },
         "fallback": {
           "type": "array",
-          "items": {"type": "string"},
+          "items": {
+            "type": "string"
+          },
           "description": "Fallback providers if primary fails"
         },
         "providers": {
@@ -169,25 +235,52 @@
             "gemini": {
               "type": "object",
               "properties": {
-                "model": {"type": "string", "default": "gemini-embedding-001"},
-                "dimensions": {"type": "integer", "default": 768},
-                "api_key_env": {"type": "string", "default": "GOOGLE_API_KEY"}
+                "model": {
+                  "type": "string",
+                  "default": "gemini-embedding-001"
+                },
+                "dimensions": {
+                  "type": "integer",
+                  "default": 768
+                },
+                "api_key_env": {
+                  "type": "string",
+                  "default": "GOOGLE_API_KEY"
+                }
               }
             },
             "openai": {
               "type": "object",
               "properties": {
-                "model": {"type": "string", "default": "text-embedding-3-small"},
-                "dimensions": {"type": "integer", "default": 1536},
-                "api_key_env": {"type": "string", "default": "OPENAI_API_KEY"}
+                "model": {
+                  "type": "string",
+                  "default": "text-embedding-3-small"
+                },
+                "dimensions": {
+                  "type": "integer",
+                  "default": 1536
+                },
+                "api_key_env": {
+                  "type": "string",
+                  "default": "OPENAI_API_KEY"
+                }
               }
             },
             "ollama": {
               "type": "object",
               "properties": {
-                "model": {"type": "string", "default": "nomic-embed-text"},
-                "dimensions": {"type": "integer", "default": 768},
-                "host": {"type": "string", "default": "http://localhost:11434"}
+                "model": {
+                  "type": "string",
+                  "default": "nomic-embed-text"
+                },
+                "dimensions": {
+                  "type": "integer",
+                  "default": 768
+                },
+                "host": {
+                  "type": "string",
+                  "default": "http://localhost:11434"
+                }
               }
             }
           }
@@ -196,25 +289,58 @@
           "type": "object",
           "description": "Hybrid search weight configuration",
           "properties": {
-            "bm25_weight": {"type": "number", "default": 0.4, "minimum": 0, "maximum": 1},
-            "vector_weight": {"type": "number", "default": 0.6, "minimum": 0, "maximum": 1},
-            "hard_s1_boost": {"type": "number", "default": 0.15},
-            "hard_s2_boost": {"type": "number", "default": 0.10},
-            "hard_s3_boost": {"type": "number", "default": 0.05},
-            "min_score": {"type": "number", "default": 0.1}
+            "bm25_weight": {
+              "type": "number",
+              "default": 0.4,
+              "minimum": 0,
+              "maximum": 1
+            },
+            "vector_weight": {
+              "type": "number",
+              "default": 0.6,
+              "minimum": 0,
+              "maximum": 1
+            },
+            "hard_s1_boost": {
+              "type": "number",
+              "default": 0.15
+            },
+            "hard_s2_boost": {
+              "type": "number",
+              "default": 0.1
+            },
+            "hard_s3_boost": {
+              "type": "number",
+              "default": 0.05
+            },
+            "min_score": {
+              "type": "number",
+              "default": 0.1
+            }
           }
         },
         "sync": {
           "type": "object",
           "properties": {
-            "auto_on_save": {"type": "boolean", "default": true},
-            "batch_size": {"type": "integer", "default": 20, "minimum": 1, "maximum": 100}
+            "auto_on_save": {
+              "type": "boolean",
+              "default": true
+            },
+            "batch_size": {
+              "type": "integer",
+              "default": 20,
+              "minimum": 1,
+              "maximum": 100
+            }
           }
         },
         "storage": {
           "type": "object",
           "properties": {
-            "db_path": {"type": "string", "default": ".memory/vectors.db"}
+            "db_path": {
+              "type": "string",
+              "default": ".memory/vectors.db"
+            }
           }
         },
         "dedup_threshold": {
@@ -242,8 +368,20 @@
         },
         "pipeline_steps": {
           "type": "array",
-          "items": {"type": "string", "enum": ["sync_embeddings", "generate_rules", "evolution_check", "reasoning_check", "harvest_check"]},
-          "default": ["sync_embeddings", "generate_rules"],
+          "items": {
+            "type": "string",
+            "enum": [
+              "sync_embeddings",
+              "generate_rules",
+              "evolution_check",
+              "reasoning_check",
+              "harvest_check"
+            ]
+          },
+          "default": [
+            "sync_embeddings",
+            "generate_rules"
+          ],
           "description": "Ordered pipeline steps to run"
         },
         "pipeline_after_approve": {
@@ -271,7 +409,10 @@
           "description": "Number of entries to spot-check during startup"
         },
         "auto_persist_confidence_threshold": {
-          "type": ["number", "null"],
+          "type": [
+            "number",
+            "null"
+          ],
           "default": null,
           "minimum": 0.0,
           "maximum": 1.0,
@@ -290,6 +431,13 @@
           "minimum": 0.1,
           "maximum": 10.0,
           "description": "Base delay in seconds between retries (exponential backoff)"
+        },
+        "min_content_length": {
+          "type": "integer",
+          "default": 15,
+          "minimum": 5,
+          "maximum": 100,
+          "description": "Minimum title length for auto-harvested entries to pass quality gate"
         }
       }
     },
@@ -325,22 +473,52 @@
           "type": "object",
           "description": "Quality weights by source type for confidence scoring",
           "properties": {
-            "code":     {"type": "number", "default": 1.0},
-            "function": {"type": "number", "default": 1.0},
-            "markdown": {"type": "number", "default": 0.7},
-            "commit":   {"type": "number", "default": 0.6},
-            "pr":       {"type": "number", "default": 0.5},
-            "unknown":  {"type": "number", "default": 0.3}
+            "code": {
+              "type": "number",
+              "default": 1.0
+            },
+            "function": {
+              "type": "number",
+              "default": 1.0
+            },
+            "markdown": {
+              "type": "number",
+              "default": 0.7
+            },
+            "commit": {
+              "type": "number",
+              "default": 0.6
+            },
+            "pr": {
+              "type": "number",
+              "default": 0.5
+            },
+            "unknown": {
+              "type": "number",
+              "default": 0.3
+            }
           }
         },
         "confidence_weights": {
           "type": "object",
           "description": "Component weights for confidence calculation (must sum to 1.0)",
           "properties": {
-            "source_quality":      {"type": "number", "default": 0.30},
-            "age_factor":          {"type": "number", "default": 0.30},
-            "verification_boost":  {"type": "number", "default": 0.15},
-            "source_validity":     {"type": "number", "default": 0.25}
+            "source_quality": {
+              "type": "number",
+              "default": 0.3
+            },
+            "age_factor": {
+              "type": "number",
+              "default": 0.3
+            },
+            "verification_boost": {
+              "type": "number",
+              "default": 0.15
+            },
+            "source_validity": {
+              "type": "number",
+              "default": 0.25
+            }
           }
         }
       }
@@ -356,13 +534,26 @@
         },
         "provider": {
           "type": "string",
-          "enum": ["anthropic", "openai", "gemini", "ollama"],
+          "enum": [
+            "anthropic",
+            "openai",
+            "gemini",
+            "ollama"
+          ],
           "default": "anthropic",
           "description": "Primary LLM provider for reasoning"
         },
         "fallback": {
           "type": "array",
-          "items": {"type": "string", "enum": ["anthropic", "openai", "gemini", "ollama"]},
+          "items": {
+            "type": "string",
+            "enum": [
+              "anthropic",
+              "openai",
+              "gemini",
+              "ollama"
+            ]
+          },
           "description": "Fallback LLM providers if primary fails"
         },
         "providers": {
@@ -372,29 +563,53 @@
             "anthropic": {
               "type": "object",
               "properties": {
-                "model": {"type": "string", "default": "claude-sonnet-4-20250514"},
-                "api_key_env": {"type": "string", "default": "ANTHROPIC_API_KEY"}
+                "model": {
+                  "type": "string",
+                  "default": "claude-sonnet-4-20250514"
+                },
+                "api_key_env": {
+                  "type": "string",
+                  "default": "ANTHROPIC_API_KEY"
+                }
               }
             },
             "openai": {
               "type": "object",
               "properties": {
-                "model": {"type": "string", "default": "gpt-4o-mini"},
-                "api_key_env": {"type": "string", "default": "OPENAI_API_KEY"}
+                "model": {
+                  "type": "string",
+                  "default": "gpt-4o-mini"
+                },
+                "api_key_env": {
+                  "type": "string",
+                  "default": "OPENAI_API_KEY"
+                }
               }
             },
             "gemini": {
               "type": "object",
               "properties": {
-                "model": {"type": "string", "default": "gemini-2.0-flash"},
-                "api_key_env": {"type": "string", "default": "GOOGLE_API_KEY"}
+                "model": {
+                  "type": "string",
+                  "default": "gemini-2.0-flash"
+                },
+                "api_key_env": {
+                  "type": "string",
+                  "default": "GOOGLE_API_KEY"
+                }
               }
             },
             "ollama": {
               "type": "object",
               "properties": {
-                "model": {"type": "string", "default": "llama3.1"},
-                "host": {"type": "string", "default": "http://localhost:11434"}
+                "model": {
+                  "type": "string",
+                  "default": "llama3.1"
+                },
+                "host": {
+                  "type": "string",
+                  "default": "http://localhost:11434"
+                }
               }
             }
           }
@@ -445,8 +660,16 @@
         },
         "exclude_patterns": {
           "type": "array",
-          "items": {"type": "string"},
-          "default": ["**/node_modules/**", "**/.git/**", "**/venv/**", "**/__pycache__/**", "**/.memory/**"],
+          "items": {
+            "type": "string"
+          },
+          "default": [
+            "**/node_modules/**",
+            "**/.git/**",
+            "**/venv/**",
+            "**/__pycache__/**",
+            "**/.memory/**"
+          ],
           "description": "Glob patterns to exclude from scanning"
         },
         "max_documents": {
@@ -458,12 +681,16 @@
         },
         "relevance_keywords": {
           "type": "array",
-          "items": {"type": "string"},
+          "items": {
+            "type": "string"
+          },
           "description": "Keywords used for relevance scoring in document content sampling"
         },
         "high_value_filenames": {
           "type": "array",
-          "items": {"type": "string"},
+          "items": {
+            "type": "string"
+          },
           "description": "Filenames that receive a bonus relevance score"
         }
       }

@@ -21,6 +21,10 @@ from typing import Any, Dict
 
 logger = logging.getLogger("efm.config_presets")
 
+# EFM release version — bumped on each significant release.
+# Used by check_startup() to detect outdated deployments.
+EFM_VERSION = "3.1.0"
+
 # ---------------------------------------------------------------------------
 # Preset definitions
 # ---------------------------------------------------------------------------

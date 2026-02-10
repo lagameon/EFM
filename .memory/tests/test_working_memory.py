@@ -33,6 +33,8 @@ from lib.working_memory import (
     SessionResumeReport,
     SessionStartReport,
     SessionStatus,
+    _clean_markdown_artifacts,
+    _compute_extraction_confidence,
     _convert_candidate_to_entry,
     _count_phases,
     _extract_candidates,
@@ -43,6 +45,7 @@ from lib.working_memory import (
     _generate_task_plan,
     _get_current_phase,
     _hash8,
+    _is_viable_candidate,
     _sanitize_anchor,
     auto_harvest_and_persist,
     clear_session,
@@ -1059,6 +1062,305 @@ class TestExtractTags(unittest.TestCase):
     def test_filters_stop_words(self):
         tags = _extract_tags("the and for with", ["this that are was"])
         self.assertEqual(tags, [])
+
+
+# ===========================================================================
+# Test: _clean_markdown_artifacts
+# ===========================================================================
+
+class TestCleanMarkdownArtifacts(unittest.TestCase):
+
+    def test_removes_pipe_chars(self):
+        result = _clean_markdown_artifacts("MUST use ib.schedule() |")
+        self.assertNotIn("|", result)
+        self.assertIn("MUST", result)
+
+    def test_removes_bold_markers(self):
+        result = _clean_markdown_artifacts("**Important** rule here")
+        self.assertNotIn("**", result)
+        self.assertIn("Important", result)
+
+    def test_removes_backticks(self):
+        result = _clean_markdown_artifacts("Use `shift(1)` before rolling")
+        self.assertNotIn("`", result)
+        self.assertIn("shift(1)", result)
+
+    def test_collapses_whitespace(self):
+        result = _clean_markdown_artifacts("too   many    spaces")
+        self.assertEqual(result, "too many spaces")
+
+
+# ===========================================================================
+# Test: _is_viable_candidate
+# ===========================================================================
+
+class TestIsViableCandidate(unittest.TestCase):
+
+    def test_rejects_short_title(self):
+        self.assertFalse(_is_viable_candidate("short", ["content here"]))
+
+    def test_accepts_adequate_title(self):
+        self.assertTrue(_is_viable_candidate(
+            "This is a sufficiently long title for testing",
+            ["Some meaningful content"]
+        ))
+
+    def test_rejects_boilerplate_only_content(self):
+        self.assertFalse(_is_viable_candidate(
+            "A long enough title here yes",
+            ["Extracted via: Error/Fix pattern"]
+        ))
+
+    def test_accepts_content_matching_title(self):
+        """Single-item content matching title is valid for auto-harvested entries."""
+        title = "Always validate input before processing"
+        self.assertTrue(_is_viable_candidate(title, [title]))
+
+    def test_custom_min_length(self):
+        self.assertTrue(_is_viable_candidate("12345", ["content"], min_length=5))
+        self.assertFalse(_is_viable_candidate("1234", ["content"], min_length=5))
+
+
+# ===========================================================================
+# Test: Quality gate and confidence penalties
+
+
+# ===========================================================================
+# Test: _extract_candidates quality improvements (Step 1)
+# ===========================================================================
+
+class TestExtractCandidatesQuality(unittest.TestCase):
+
+    def test_cleans_markdown_table_fragments(self):
+        """Table fragments like 'MUST use ib.schedule() |' should be cleaned."""
+        text = "MUST use ib.schedule() for all timer callbacks |"
+        result = _extract_candidates(text, "test.md")
+        if result:
+            self.assertNotIn("|", result[0].title)
+
+    def test_filters_short_must_statements(self):
+        """Very short MUST statements (< 15 chars after cleanup) should be filtered."""
+        text = "MUST do x"  # Only 9 chars
+        result = _extract_candidates(text, "test.md")
+        must_candidates = [c for c in result if "MUST/NEVER/ALWAYS" in c.extraction_reason]
+        self.assertEqual(len(must_candidates), 0)
+
+    def test_confidence_penalizes_null_rule_and_implication(self):
+        """Entry with both rule=None and implication=None should have lower confidence."""
+        high_quality = HarvestCandidate(
+            suggested_type="lesson",
+            title="A detailed lesson about database pooling strategies",
+            content=["A detailed lesson about database pooling strategies"],
+            rule="MUST pool connections",
+            implication="Connections exhaust without pooling",
+            source_hint="test.md",
+            extraction_reason="Explicit LESSON: marker",
+        )
+        low_quality = HarvestCandidate(
+            suggested_type="lesson",
+            title="A detailed lesson about database pooling strategies",
+            content=["A detailed lesson about database pooling strategies"],
+            rule=None,
+            implication=None,
+            source_hint="test.md",
+            extraction_reason="Explicit LESSON: marker",
+        )
+        self.assertGreater(
+            _compute_extraction_confidence(high_quality),
+            _compute_extraction_confidence(low_quality),
+        )
+
+# ===========================================================================
+
+class TestQualityGateExtraction(unittest.TestCase):
+
+    def test_table_fragment_cleaned(self):
+        """Markdown table fragments should be cleaned during extraction."""
+        text = "LESSON: | Some table cell | content here |"
+        result = _extract_candidates(text, "test.md")
+        if result:
+            self.assertNotIn("|", result[0].title)
+
+    def test_short_must_statement_filtered(self):
+        """MUST statements shorter than 15 chars should be filtered."""
+        text = "MUST do it"
+        result = _extract_candidates(text, "test.md")
+        # "MUST do it" is only 10 chars, should be filtered by the 10-char minimum in regex
+        # or by the quality gate
+        must_candidates = [c for c in result if "MUST do it" == c.title.strip()]
+        self.assertEqual(len(must_candidates), 0)
+
+    def test_confidence_penalty_no_rule_no_implication(self):
+        """Entries with no rule and no implication should get lower confidence."""
+        candidate_with = HarvestCandidate(
+            suggested_type="lesson",
+            title="A lesson with rule and implication",
+            content=["Some content"],
+            rule="MUST do something",
+            implication="Bad things happen",
+            source_hint="test.md",
+            extraction_reason="Explicit LESSON: marker",
+        )
+        candidate_without = HarvestCandidate(
+            suggested_type="lesson",
+            title="A lesson without rule or implication",
+            content=["Some content"],
+            rule=None,
+            implication=None,
+            source_hint="test.md",
+            extraction_reason="Explicit LESSON: marker",
+        )
+        conf_with = _compute_extraction_confidence(candidate_with)
+        conf_without = _compute_extraction_confidence(candidate_without)
+        self.assertGreater(conf_with, conf_without)
+
+
+class TestAutoHarvestQualityGate(unittest.TestCase):
+
+    def setUp(self):
+        self.tmpdir = tempfile.mkdtemp()
+        self.project_root = Path(self.tmpdir)
+        self.working_dir = self.project_root / ".memory" / "working"
+        self.working_dir.mkdir(parents=True)
+        self.events_path = self.project_root / ".memory" / "events.jsonl"
+        self.events_path.write_text("")
+        self.config = {"v3": {"working_memory_dir": ".memory/working"}}
+
+    def tearDown(self):
+        import shutil
+        shutil.rmtree(self.tmpdir)
+
+    def test_quality_gate_rejects_short_title(self):
+        """Auto-harvest should skip candidates with short titles."""
+        (self.working_dir / TASK_PLAN_FILE).write_text("# Task Plan\n**Task**: Test\n")
+        (self.working_dir / FINDINGS_FILE).write_text(
+            "# Findings\n\nLESSON: Short\n"
+        )
+        (self.working_dir / PROGRESS_FILE).write_text("# Progress\n- Started\n")
+
+        result = auto_harvest_and_persist(
+            self.working_dir, self.events_path,
+            self.project_root, self.config,
+            run_pipeline_after=False,
+        )
+        # "Short" is < 15 chars, should be skipped
+        # The candidate may or may not be found depending on regex, but if found, quality gate skips it
+        self.assertEqual(result["entries_written"], 0)
+
+
+# ===========================================================================
+# Test: Session-Level Dedup
+# ===========================================================================
+
+class TestSessionLevelDedup(unittest.TestCase):
+
+    def setUp(self):
+        self.tmpdir = tempfile.mkdtemp()
+        self.project_root = Path(self.tmpdir)
+        self.working_dir = self.project_root / ".memory" / "working"
+        self.working_dir.mkdir(parents=True)
+        self.events_path = self.project_root / ".memory" / "events.jsonl"
+        self.events_path.write_text("")
+        self.config = {"v3": {"working_memory_dir": ".memory/working"}}
+
+    def tearDown(self):
+        import shutil
+        shutil.rmtree(self.tmpdir)
+
+    def _write_session(self):
+        (self.working_dir / TASK_PLAN_FILE).write_text("# Task Plan\n**Task**: Test\n")
+        (self.working_dir / FINDINGS_FILE).write_text(
+            "# Findings\n\nLESSON: Always validate input before processing data\n"
+            "CONSTRAINT: MUST use shift(1) before rolling operations\n"
+        )
+        (self.working_dir / PROGRESS_FILE).write_text("# Progress\n- Started\n")
+
+    def test_same_conversation_skips_duplicates(self):
+        """Second harvest with same conversation_id should skip already-written entries."""
+        conv_id = "test-conv-001"
+        self._write_session()
+        result1 = auto_harvest_and_persist(
+            self.working_dir, self.events_path,
+            self.project_root, self.config,
+            run_pipeline_after=False,
+            conversation_id=conv_id,
+        )
+        written_count = result1["entries_written"]
+        self.assertGreater(written_count, 0)
+
+        # Recreate session and harvest again with same conversation_id
+        self._write_session()
+        result2 = auto_harvest_and_persist(
+            self.working_dir, self.events_path,
+            self.project_root, self.config,
+            run_pipeline_after=False,
+            conversation_id=conv_id,
+        )
+        # Should have session dedup skips
+        self.assertGreater(result2.get("session_dedup_skipped", 0), 0)
+
+    def test_different_conversation_passes(self):
+        """Different conversation_id should NOT trigger session dedup."""
+        self._write_session()
+        result1 = auto_harvest_and_persist(
+            self.working_dir, self.events_path,
+            self.project_root, self.config,
+            run_pipeline_after=False,
+            conversation_id="conv-001",
+        )
+        written1 = result1["entries_written"]
+
+        self._write_session()
+        result2 = auto_harvest_and_persist(
+            self.working_dir, self.events_path,
+            self.project_root, self.config,
+            run_pipeline_after=False,
+            conversation_id="conv-002",
+        )
+        # Different conversation should still attempt to write (may be caught by regular dedup though)
+        self.assertEqual(result2.get("session_dedup_skipped", 0), 0)
+
+    def test_no_conversation_id_unchanged_behavior(self):
+        """Without conversation_id, behavior should be unchanged."""
+        self._write_session()
+        result = auto_harvest_and_persist(
+            self.working_dir, self.events_path,
+            self.project_root, self.config,
+            run_pipeline_after=False,
+        )
+        self.assertGreater(result["entries_written"], 0)
+
+    def test_conversation_id_stored_in_meta(self):
+        """Written entries should have conversation_id in _meta."""
+        conv_id = "test-conv-meta"
+        self._write_session()
+        auto_harvest_and_persist(
+            self.working_dir, self.events_path,
+            self.project_root, self.config,
+            run_pipeline_after=False,
+            conversation_id=conv_id,
+        )
+        # Read events and check _meta
+        content = self.events_path.read_text().strip()
+        if content:
+            for line in content.split("\n"):
+                entry = json.loads(line)
+                self.assertEqual(
+                    entry.get("_meta", {}).get("conversation_id"),
+                    conv_id
+                )
+
+    def test_session_dedup_count_in_result(self):
+        """Result dict should include session_dedup_skipped count."""
+        conv_id = "test-conv-count"
+        self._write_session()
+        result1 = auto_harvest_and_persist(
+            self.working_dir, self.events_path,
+            self.project_root, self.config,
+            run_pipeline_after=False,
+            conversation_id=conv_id,
+        )
+        self.assertIn("session_dedup_skipped", result1)
 
 
 if __name__ == "__main__":

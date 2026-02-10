@@ -10,6 +10,7 @@ Usage:
     python3 .memory/scripts/init_cli.py --preset standard   # Init with preset
     python3 .memory/scripts/init_cli.py --dry-run           # Preview without writing
     python3 .memory/scripts/init_cli.py --force             # Overwrite existing EF Memory sections
+    python3 .memory/scripts/init_cli.py --upgrade           # Upgrade hooks/rules without overwriting user content
     python3 .memory/scripts/init_cli.py --target /path/to   # Init a different project
     python3 .memory/scripts/init_cli.py --help              # Show help
 
@@ -38,6 +39,7 @@ def _parse_args(argv: list) -> dict:
     args = {
         "dry_run": False,
         "force": False,
+        "upgrade": False,
         "target": None,
         "preset": None,
         "help": False,
@@ -51,6 +53,8 @@ def _parse_args(argv: list) -> dict:
             args["dry_run"] = True
         elif arg == "--force":
             args["force"] = True
+        elif arg == "--upgrade":
+            args["upgrade"] = True
         elif arg == "--target":
             if i + 1 < len(argv):
                 args["target"] = argv[i + 1]
@@ -134,6 +138,10 @@ def main():
         print(__doc__.strip())
         sys.exit(0)
 
+    if args["force"] and args["upgrade"]:
+        print("ERROR: --force and --upgrade are mutually exclusive")
+        sys.exit(1)
+
     # Resolve project root
     if args["target"]:
         project_root = Path(args["target"]).resolve()
@@ -173,6 +181,19 @@ def main():
     # Track effective preset name for report
     if not preset_name:
         preset_name = config.get("preset")
+
+    if args["upgrade"]:
+        from lib.init import run_upgrade
+        print(f"EF Memory Upgrade — {project_root}")
+        if args["dry_run"]:
+            print("(dry run — no files will be written)")
+        report = run_upgrade(
+            project_root=project_root,
+            config=config,
+            dry_run=args["dry_run"],
+        )
+        _print_report(report, preset_name=preset_name)
+        return
 
     # Run init
     print(f"EF Memory Init — {project_root}")

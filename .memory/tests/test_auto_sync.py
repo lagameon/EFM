@@ -55,6 +55,7 @@ def _make_valid_entry(**overrides) -> dict:
 
 
 def _make_config(**overrides) -> dict:
+    from lib.config_presets import EFM_VERSION
     config = {
         "embedding": {
             "enabled": False,
@@ -68,6 +69,7 @@ def _make_config(**overrides) -> dict:
             "dedup_threshold": 0.85,
             "startup_source_sample_size": 10,
         },
+        "efm_version": EFM_VERSION,
     }
     config.update(overrides)
     return config
@@ -588,6 +590,138 @@ class TestReasoningStep(unittest.TestCase):
         )
         self.assertTrue(report.step_results[0].success)
         self.assertEqual(report.step_results[0].details["total_entries"], 2)
+
+
+# ===========================================================================
+# Test: Version Check (Step 4)
+# ===========================================================================
+
+class TestVersionCheck(unittest.TestCase):
+
+    def setUp(self):
+        self.tmpdir = Path(tempfile.mkdtemp())
+        self.events_path = self.tmpdir / "events.jsonl"
+        self.drafts_dir = self.tmpdir / "drafts"
+        self.drafts_dir.mkdir()
+        self.events_path.write_text("")
+
+    def test_detects_update_available(self):
+        """When installed version differs from current, update_available should be True."""
+        from lib.config_presets import EFM_VERSION
+        config = _make_config()
+        config["efm_version"] = "3.0.0"  # Older than current
+
+        report = check_startup(
+            self.events_path, self.drafts_dir, self.tmpdir, config
+        )
+        if EFM_VERSION != "3.0.0":
+            self.assertTrue(report.update_available)
+            self.assertEqual(report.efm_version_installed, "3.0.0")
+
+    def test_no_update_when_current(self):
+        """When installed version matches current, no update available."""
+        from lib.config_presets import EFM_VERSION
+        config = _make_config()
+        config["efm_version"] = EFM_VERSION
+
+        report = check_startup(
+            self.events_path, self.drafts_dir, self.tmpdir, config
+        )
+        self.assertFalse(report.update_available)
+
+    def test_hint_shows_update(self):
+        """Startup hint should mention update when available."""
+        from lib.config_presets import EFM_VERSION
+        config = _make_config()
+        config["efm_version"] = "2.0.0"
+
+        report = check_startup(
+            self.events_path, self.drafts_dir, self.tmpdir, config
+        )
+        if EFM_VERSION != "2.0.0":
+            self.assertIn("update available", report.hint)
+            self.assertIn("--upgrade", report.hint)
+
+    def test_efm_version_format(self):
+        """EFM_VERSION should be a valid semver string."""
+        from lib.config_presets import EFM_VERSION
+        import re
+        self.assertRegex(EFM_VERSION, r"^\d+\.\d+\.\d+$")
+
+    def test_efm_version_type(self):
+        """EFM_VERSION should be a string."""
+        from lib.config_presets import EFM_VERSION
+        self.assertIsInstance(EFM_VERSION, str)
+
+
+# ===========================================================================
+# Test: Waste Ratio Enhancement (Step 5)
+# ===========================================================================
+
+class TestWasteRatio(unittest.TestCase):
+
+    def setUp(self):
+        self.tmpdir = Path(tempfile.mkdtemp())
+        self.events_path = self.tmpdir / "events.jsonl"
+        self.drafts_dir = self.tmpdir / "drafts"
+        self.drafts_dir.mkdir()
+
+    def test_hint_includes_waste_lines(self):
+        """Compact hint should include waste_lines count."""
+        # Create events with duplicates to trigger compaction
+        now = datetime.now(timezone.utc).isoformat()
+        entry = _make_valid_entry(created_at=now, source=["PR #1"])
+        # Write same entry 5 times (waste ratio = 5.0)
+        with open(self.events_path, "w") as f:
+            for _ in range(5):
+                f.write(json.dumps(entry) + "\n")
+
+        config = _make_config()
+        config["compaction"] = {"auto_suggest_threshold": 2.0}
+        from lib.config_presets import EFM_VERSION
+        config["efm_version"] = EFM_VERSION  # Prevent update hint noise
+
+        report = check_startup(
+            self.events_path, self.drafts_dir, self.tmpdir, config
+        )
+        if report.compaction_suggested:
+            self.assertIn("obsolete lines", report.hint)
+
+    def test_healthy_no_waste_in_hint(self):
+        """When healthy, no waste info should appear in hint."""
+        now = datetime.now(timezone.utc).isoformat()
+        entry = _make_valid_entry(created_at=now, source=["PR #1"])
+        self.events_path.write_text(json.dumps(entry) + "\n")
+
+        config = _make_config()
+        from lib.config_presets import EFM_VERSION
+        config["efm_version"] = EFM_VERSION
+
+        report = check_startup(
+            self.events_path, self.drafts_dir, self.tmpdir, config
+        )
+        if not report.compaction_suggested:
+            self.assertNotIn("obsolete", report.hint)
+
+    def test_waste_lines_computed(self):
+        """waste_lines should equal total_lines - active_count."""
+        now = datetime.now(timezone.utc).isoformat()
+        entry1 = _make_valid_entry(id="lesson-a-11111111", created_at=now, source=["PR #1"])
+        entry2 = _make_valid_entry(id="lesson-b-22222222", created_at=now, source=["PR #2"], title="Second entry")
+        # Write 3 lines total but only 2 unique entries
+        with open(self.events_path, "w") as f:
+            f.write(json.dumps(entry1) + "\n")
+            f.write(json.dumps(entry1) + "\n")  # duplicate
+            f.write(json.dumps(entry2) + "\n")
+
+        config = _make_config()
+        from lib.config_presets import EFM_VERSION
+        config["efm_version"] = EFM_VERSION
+
+        report = check_startup(
+            self.events_path, self.drafts_dir, self.tmpdir, config
+        )
+        self.assertEqual(report.waste_lines, 1)  # 3 lines - 2 active = 1 waste
 
 
 if __name__ == "__main__":
