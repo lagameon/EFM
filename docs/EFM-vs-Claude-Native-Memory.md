@@ -1,8 +1,8 @@
-# EF Memory vs Claude Native Memory: Deep Comparison
+# EFM vs Claude Native Memory: Deep Comparison
 
 > Last updated: 2026-02-09
 
-This document provides a comprehensive comparison between **EF Memory for Claude (EFM)** and **Claude's built-in memory systems** (Claude.ai Chat Memory, Claude Code Auto Memory, and the Memory Tool API).
+This document provides a comprehensive comparison between **EFM (Evidence-First Memory for Claude Code)** and **Claude's built-in memory systems** (Claude.ai Chat Memory, Claude Code Auto Memory, and the Memory Tool API).
 
 ---
 
@@ -423,4 +423,4 @@ Claude Native Memory                    EF Memory (EFM)
 
 ---
 
-*This document is part of the EF Memory for Claude project. For implementation details, see [SCHEMA.md](../.memory/SCHEMA.md) and [README.md](../README.md).*
+*This document is part of the EFM project. For implementation details, see [SCHEMA.md](../.memory/SCHEMA.md) and [README.md](../README.md).*

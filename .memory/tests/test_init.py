@@ -302,12 +302,13 @@ class TestGenerateHooksSettings(unittest.TestCase):
         hook = group["hooks"][0]
         self.assertTrue(hook.get("once"))
 
-    def test_pre_compact_uses_echo(self):
+    def test_pre_compact_uses_python_hook(self):
         hooks = generate_hooks_settings()
         group = hooks["PreCompact"][0]
         hook = group["hooks"][0]
-        self.assertIn("echo", hook["command"])
-        self.assertIn("[EF Memory]", hook["command"])
+        self.assertIn("compact_harvest.py", hook["command"])
+        self.assertEqual(hook["timeout"], 10)
+        self.assertIn("statusMessage", hook)
 
     def test_all_hooks_have_timeout(self):
         hooks = generate_hooks_settings()

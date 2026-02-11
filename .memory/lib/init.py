@@ -269,8 +269,9 @@ def generate_hooks_settings() -> dict:
                 "hooks": [
                     {
                         "type": "command",
-                        "command": "echo '[EF Memory] Before compacting: consider /memory-save if you discovered lessons. Check .memory/working/ for active sessions.'",
-                        "timeout": 5,
+                        "command": f"{_cd}python3 .memory/hooks/compact_harvest.py",
+                        "timeout": 10,
+                        "statusMessage": "EFM pre-compact harvest",
                     }
                 ]
             }

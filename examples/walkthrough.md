@@ -1,4 +1,4 @@
-# EF Memory Walkthrough
+# EFM Walkthrough
 
 Complete workflow demonstration:
 **Import (dry-run) → Human Review → Save → Generate JSONL → Append → Verify**
@@ -8,7 +8,7 @@ Complete workflow demonstration:
 ## Prerequisites
 
 - Claude Code CLI installed
-- EF Memory template copied to your project
+- EFM template copied to your project
 
 ---
 
@@ -16,8 +16,8 @@ Complete workflow demonstration:
 
 ```bash
 # 1. Copy template to your project
-cp -r /path/to/EF-Memory-for-Claude/.memory /your/project/
-cp -r /path/to/EF-Memory-for-Claude/.claude /your/project/
+cp -r /path/to/EFM/.memory /your/project/
+cp -r /path/to/EFM/.claude /your/project/
 
 # 2. Edit config (set your paths)
 # Edit .memory/config.json:

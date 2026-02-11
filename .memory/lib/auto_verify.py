@@ -143,8 +143,8 @@ def validate_schema(entry: dict) -> ValidationResult:
             f"(expected one of {sorted(VALID_TYPES)})"
         )
 
-    # core-004: Classification enum
-    classification = entry.get("classification", "")
+    # core-004: Classification enum (case-insensitive)
+    classification = entry.get("classification", "").lower()
     if classification not in VALID_CLASSIFICATIONS:
         result.errors.append(
             f"Invalid classification: '{classification}' "

@@ -1,6 +1,6 @@
-# EF Memory for Claude
+# EFM — Evidence-First Memory for Claude Code
 
-> Evidence-first project memory for Claude Code — structured JSONL storage, hybrid search (embedding + FTS5), auto-harvest from conversations & plan sessions, 10 slash commands, compaction + time-sharded archive, fully automated via hooks.
+> Structured JSONL storage, hybrid search (embedding + FTS5), auto-harvest from conversations & plan sessions, 10 slash commands, compaction + time-sharded archive, fully automated via hooks.
 
 A **safe, auditable memory skill system** that turns project incidents, constraints, and hard-earned lessons into reusable engineering knowledge. Inspired by the workspace memory architecture of [OpenClaw](https://github.com/pinkpixel-dev/OpenClaw) (moltbot) — but built specifically for Claude Code's skill system with evidence-first guarantees.
 
@@ -12,7 +12,7 @@ A **safe, auditable memory skill system** that turns project incidents, constrai
 
 This project shares the same philosophy as [OpenClaw](https://github.com/pinkpixel-dev/OpenClaw) (moltbot)'s memory system — persistent, workspace-integrated, embedding-powered agent memory — but takes a different approach for Claude Code:
 
-| | OpenClaw / moltbot | EF Memory |
+| | OpenClaw / moltbot | EFM |
 |---|---|---|
 | **Interface** | CLI commands (`openclaw memory ...`) | Claude Code skills (`/memory-save`, `/memory-search`, ...) |
 | **Storage** | Markdown files + workspace | Structured JSONL + SQLite vector DB |
@@ -45,7 +45,7 @@ This system solves that by enforcing:
 
 ```
                     ┌──────────────────────────────────────────────┐
-                    │            EF Memory V3 Runtime               │
+                    │               EFM V3 Runtime                    │
                     │                                              │
   Event Sources      │   Layer 4: Working Memory (V3)               │
   ─────────────     │   ├── Session files (task_plan / findings)   │
@@ -200,7 +200,7 @@ Or tell Claude: **"turn off memory review"** / **"turn on memory review"**
 
 ## V2 Capabilities
 
-EF Memory V2 adds six milestones of infrastructure on top of the core template:
+EFM V2 adds six milestones of infrastructure on top of the core template:
 
 ### M1: Embedding Layer
 Multi-provider embedding support (Gemini, OpenAI, Ollama) with SQLite vector storage, FTS5 full-text index, and incremental sync engine.
@@ -292,7 +292,7 @@ All reasoning functions are **advisory only** — they never modify events.jsonl
 
 ## V3 Capabilities
 
-EF Memory V3 adds automatic startup, working memory, and lifecycle automation:
+EFM V3 adds automatic startup, working memory, and lifecycle automation:
 
 ### M7: Project Init & Auto-Startup
 One-command initialization generates all Claude Code integration files. Safe merge for existing projects — CLAUDE.md is appended (not overwritten), settings.local.json merges permissions and hooks.
@@ -305,12 +305,12 @@ python3 .memory/scripts/init_cli.py --upgrade            # Safe in-place upgrade
 python3 .memory/scripts/init_cli.py --target /path/to   # Init another project
 ```
 
-Generated files: `CLAUDE.md` (EF Memory section), `.claude/rules/ef-memory-startup.md`, `.claude/settings.local.json` (permissions + 5 automation hooks), `.claude/hooks.json` (legacy pre-compact).
+Generated files: `CLAUDE.md` (EFM section), `.claude/rules/ef-memory-startup.md`, `.claude/settings.local.json` (permissions + 5 automation hooks), `.claude/hooks.json` (legacy pre-compact).
 
 **`--upgrade` mode** (V3.1): Safely updates an existing EFM installation. Replaces only the EFM section markers in CLAUDE.md (preserves all user content), force-updates the startup rule, merges hooks and settings. Does NOT touch `events.jsonl`, `config.json` content, `working/`, or `drafts/`. Stamps the current EFM version. Warns if CLAUDE.md has thin project context (<10 lines before EFM section).
 
 ### M8: Working Memory (PWF Integration)
-Session-scoped working memory inspired by Planning with Files. Three markdown files (`task_plan.md`, `findings.md`, `progress.md`) in `.memory/working/` act as short-term RAM while EF Memory serves as long-term disk.
+Session-scoped working memory inspired by Planning with Files. Three markdown files (`task_plan.md`, `findings.md`, `progress.md`) in `.memory/working/` act as short-term RAM while EFM serves as long-term disk.
 
 ```bash
 python3 .memory/scripts/working_memory_cli.py start "refactor auth module"  # Start session
@@ -322,7 +322,7 @@ python3 .memory/scripts/working_memory_cli.py clear                         # En
 
 Or use the `/memory-plan` command for the full workflow.
 
-**Auto-prefill**: On session start, EF Memory is searched and relevant entries are injected into `findings.md`.
+**Auto-prefill**: On session start, EFM is searched and relevant entries are injected into `findings.md`.
 
 **Harvest patterns**: LESSON, CONSTRAINT, DECISION, WARNING markers, MUST/NEVER statements, and Error→Fix pairs are automatically extracted as `/memory-save` candidates.
 
@@ -445,7 +445,7 @@ Startup hint now shows specific waste line counts when suggesting compaction. In
 
 ## Automation & Hooks
 
-EF Memory uses **Claude Code hooks** for event-driven automation — no background daemons or cron jobs.
+EFM uses **Claude Code hooks** for event-driven automation — no background daemons or cron jobs.
 
 ### Hook Architecture
 
@@ -479,7 +479,7 @@ reasoning_check  → Cross-memory correlation, contradiction detection, synthesi
     "auto_draft_from_conversation": true,  // Scan conversation → drafts on stop
     "draft_auto_expire_days": 7,           // Auto-delete drafts older than N days (0=never)
     "session_recovery": true,              // Detect stale sessions at startup
-    "prefill_on_plan_start": true,         // Prefill findings with EF Memory
+    "prefill_on_plan_start": true,         // Prefill findings with EFM
     "max_prefill_entries": 5
   },
   "automation": {

@@ -10,6 +10,9 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 MEMORY_DIR="$(dirname "$SCRIPT_DIR")"
 PROJECT_ROOT="$(dirname "$MEMORY_DIR")"
 
+# Clean up stale compact harvest markers (>2h old)
+find "$MEMORY_DIR/working/" -name ".compact_harvested" -mmin +120 -delete 2>/dev/null || true
+
 # Run startup check (lightweight, <100ms)
 cd "$PROJECT_ROOT"
 python3 .memory/scripts/pipeline_cli.py --startup 2>/dev/null || true

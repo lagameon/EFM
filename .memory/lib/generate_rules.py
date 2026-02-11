@@ -143,7 +143,7 @@ def _load_hard_entries(events_path: Path) -> tuple[List[dict], int]:
     # Filter: hard + not deprecated
     hard_entries = [
         e for e in entries_by_id.values()
-        if e.get("classification") == "hard" and not e.get("deprecated", False)
+        if e.get("classification", "").lower() == "hard" and not e.get("deprecated", False)
     ]
 
     # Sort by severity: S1 → S2 → S3 → None

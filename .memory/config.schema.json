@@ -1,8 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://github.com/anthropics/ef-memory-for-claude/config.schema.json",
-  "title": "EF Memory Configuration",
-  "description": "Configuration schema for EF Memory for Claude",
+  "$id": "https://github.com/lagameon/EFM/config.schema.json",
+  "title": "EFM Configuration",
+  "description": "Configuration schema for EFM (Evidence-First Memory for Claude Code)",
   "type": "object",
   "required": [
     "version",
@@ -735,7 +735,7 @@
         "harvest_on_compact": {
           "type": "boolean",
           "default": true,
-          "description": "Prompt memory harvest before context compaction"
+          "description": "Automatically harvest working memory and scan conversation before context compaction. Captures memories that would be lost when sessions hit context limits instead of ending normally."
         },
         "prefill_on_plan_start": {
           "type": "boolean",

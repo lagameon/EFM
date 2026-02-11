@@ -61,6 +61,12 @@ def main():
     findings_path = working_dir / "findings.md"
     progress_path = working_dir / "progress.md"
 
+    # Skip if PreCompact already harvested this session
+    compact_marker = working_dir / ".compact_harvested"
+    if compact_marker.exists():
+        compact_marker.unlink(missing_ok=True)
+        sys.exit(0)
+
     has_session = findings_path.exists() or progress_path.exists()
     if not has_session:
         # No active working memory session — try scanning conversation

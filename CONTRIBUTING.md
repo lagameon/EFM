@@ -1,4 +1,4 @@
-# Contributing to EF Memory for Claude
+# Contributing to EFM (Evidence-First Memory for Claude Code)
 
 Thank you for your interest in contributing!
 

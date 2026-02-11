@@ -1,6 +1,6 @@
 # Changelog
 
-All notable changes to EF Memory for Claude will be documented in this file.
+All notable changes to EFM (Evidence-First Memory for Claude Code) will be documented in this file.
 
 ---
 
@@ -569,7 +569,7 @@ Systematic audit of M1-M5 codebase, fixing 36 bugs across 4 priority layers.
 
 ## 2026-02-01 — v1.0 Initial Release
 
-### EF Memory for Claude v1.0
+### EFM v1.0
 
 - `/memory-save` — Create memory entries (manual, evidence-first)
 - `/memory-search` — Query existing memory safely

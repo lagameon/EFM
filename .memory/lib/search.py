@@ -90,7 +90,7 @@ def _compute_boost(entry: dict, weights: dict) -> float:
     classification = entry.get("classification", "")
     severity = entry.get("severity", "")
 
-    if classification != "hard":
+    if classification.lower() != "hard":
         return 0.0
 
     boost_map = {
