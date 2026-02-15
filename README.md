@@ -918,7 +918,11 @@ Hard entries are automatically injected into `.claude/rules/ef-memory/` (M3) so 
 
 **Any structured document.** The system is document-type agnostic. You can import from incidents, decisions, architecture docs, runbooks, retrospectives, READMEs, code comments, changelogs, and any markdown file. Use `/memory-import <path>` with any file that contains extractable knowledge (rules, lessons, constraints, decisions, risks, or facts).
 
-### 9. Can I use this without Claude Code CLI?
+### 9. Hooks error in non-git subdirectories (infinite Stop loop)?
+
+If you open Claude Code from a directory that isn't inside a git repository (e.g. a subfolder of a mono-repo that isn't itself a git root), the hooks will fail silently and skip. Before V3.2-P5 this caused `git rev-parse` to write to stderr, and the Stop hook could enter an infinite loop. **Fix:** run `/memory-init` to regenerate hooks with the safe prefix, or update to V3.2-P5+.
+
+### 10. Can I use this without Claude Code CLI?
 
 The memory format (JSONL + SCHEMA.md) is tool-agnostic. The `.claude/commands/` files are specific to Claude Code CLI but the principles apply anywhere. The Python library modules can be used independently.
 

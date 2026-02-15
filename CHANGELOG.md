@@ -4,6 +4,29 @@ All notable changes to EFM (Evidence-First Memory for Claude Code) will be docum
 
 ---
 
+## 2026-02-15 — V3.2 Phase 5: Hook Safety for Non-Git Directories
+
+### Fix: Stop hook infinite loop in non-git subdirectories
+
+**BUG: Hook commands fail in non-git directories**
+All hook commands used `cd "$(git rev-parse --show-toplevel)" && ...` to find the project root. When Claude Code is opened from a directory that isn't inside a git repository (e.g. `infra/openclaw-veda/` inside a mono-repo), `git rev-parse` fails with exit code 128 and writes to stderr. For the Stop hook specifically, this error output is fed back into the conversation, causing Claude to respond, which triggers another Stop → **infinite loop**.
+
+**Fix:** Changed the hook command prefix to:
+```
+_r="$(git rev-parse --show-toplevel 2>/dev/null)" || exit 0; cd "$_r" && ...
+```
+This suppresses stderr (`2>/dev/null`) and silently exits the hook (`|| exit 0`) when not in a git repo. All 5 hooks (SessionStart, PreToolUse:Edit/Write, PreToolUse:EnterPlanMode, Stop, PreCompact) updated.
+
+**Upgrade:** Run `/memory-init` to regenerate hooks with the safe prefix in existing installations.
+
+**Modified files (2):**
+- `.memory/lib/init.py` — `generate_hooks_settings()` safe prefix
+- `.memory/tests/test_init.py` — updated test to assert stderr suppression and graceful exit
+
+**Test count: 953** (unchanged)
+
+---
+
 ## 2026-02-11 — V3.2 Phase 3: Intelligence Upgrades, Session Safety, Test Coverage
 
 ### 9 improvements across search intelligence, scanner safety, session health, DRY refactoring, and test coverage

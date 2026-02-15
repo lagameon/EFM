@@ -211,7 +211,9 @@ def generate_hooks_settings() -> dict:
     # Prefix hook commands with cd to git repo root so they work
     # regardless of the current working directory (e.g. when Claude
     # is editing files in a subdirectory like deployment/live_trading/).
-    _cd = 'cd "$(git rev-parse --show-toplevel)" && '
+    # The _root variable silently exits if not in a git repo, preventing
+    # errors (and infinite Stop-hook loops) in non-git subdirectories.
+    _root = '_r="$(git rev-parse --show-toplevel 2>/dev/null)" || exit 0; cd "$_r" && '
     return {
         "SessionStart": [
             {
@@ -219,7 +221,7 @@ def generate_hooks_settings() -> dict:
                 "hooks": [
                     {
                         "type": "command",
-                        "command": f"{_cd}python3 .memory/scripts/pipeline_cli.py --startup 2>/dev/null || true",
+                        "command": f"{_root}python3 .memory/scripts/pipeline_cli.py --startup 2>/dev/null || true",
                         "timeout": 15,
                         "statusMessage": "EF Memory startup check",
                     }
@@ -232,7 +234,7 @@ def generate_hooks_settings() -> dict:
                 "hooks": [
                     {
                         "type": "command",
-                        "command": f"{_cd}python3 .memory/hooks/pre_edit_search.py",
+                        "command": f"{_root}python3 .memory/hooks/pre_edit_search.py",
                         "timeout": 5,
                         "statusMessage": "EF Memory search",
                     }
@@ -243,7 +245,7 @@ def generate_hooks_settings() -> dict:
                 "hooks": [
                     {
                         "type": "command",
-                        "command": f"{_cd}python3 .memory/hooks/plan_start.py",
+                        "command": f"{_root}python3 .memory/hooks/plan_start.py",
                         "timeout": 10,
                         "statusMessage": "EF Memory plan session",
                     }
@@ -256,7 +258,7 @@ def generate_hooks_settings() -> dict:
                 "hooks": [
                     {
                         "type": "command",
-                        "command": f"{_cd}python3 .memory/hooks/stop_harvest.py",
+                        "command": f"{_root}python3 .memory/hooks/stop_harvest.py",
                         "timeout": 30,
                         "once": True,
                     }
@@ -269,7 +271,7 @@ def generate_hooks_settings() -> dict:
                 "hooks": [
                     {
                         "type": "command",
-                        "command": f"{_cd}python3 .memory/hooks/compact_harvest.py",
+                        "command": f"{_root}python3 .memory/hooks/compact_harvest.py",
                         "timeout": 10,
                         "statusMessage": "EFM pre-compact harvest",
                     }

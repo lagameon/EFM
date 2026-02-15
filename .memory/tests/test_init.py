@@ -421,7 +421,7 @@ class TestMergeSettingsJson(unittest.TestCase):
         self.assertEqual(len(result2["hooks"]["PreCompact"]), 1)
 
     def test_hooks_commands_have_cd_prefix(self):
-        """All .memory/hooks/ commands should cd to git root first."""
+        """All .memory/hooks/ commands should cd to git root first, with safe fallback."""
         hooks = generate_hooks_settings()
         for event_name, groups in hooks.items():
             for group in groups:
@@ -429,9 +429,20 @@ class TestMergeSettingsJson(unittest.TestCase):
                     cmd = hook["command"]
                     if ".memory/hooks/" in cmd:
                         self.assertIn(
-                            'cd "$(git rev-parse --show-toplevel)"',
+                            'git rev-parse --show-toplevel',
                             cmd,
                             f"{event_name} hook missing cd-to-root prefix",
+                        )
+                        # Must suppress stderr and exit gracefully for non-git dirs
+                        self.assertIn(
+                            '2>/dev/null',
+                            cmd,
+                            f"{event_name} hook should suppress git stderr",
+                        )
+                        self.assertIn(
+                            '|| exit 0',
+                            cmd,
+                            f"{event_name} hook should exit 0 on non-git dirs",
                         )
 
     def test_hooks_upgrade_replaces_old_relative_paths(self):
