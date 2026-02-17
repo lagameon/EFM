@@ -416,6 +416,21 @@ def scan_project(project_root: Path) -> List[str]:
             + ", ".join(_required_ignores.keys())
         )
 
+    # Check .gitattributes for merge=union on events.jsonl
+    gitattributes = project_root / ".gitattributes"
+    if gitattributes.exists():
+        ga_content = gitattributes.read_text()
+        if "events.jsonl" not in ga_content or "merge=union" not in ga_content:
+            suggestions.append(
+                "Add to .gitattributes: '.memory/events.jsonl merge=union' "
+                "(prevents merge conflicts when branches both append memory)"
+            )
+    else:
+        suggestions.append(
+            "Create .gitattributes with: '.memory/events.jsonl merge=union' "
+            "(prevents merge conflicts when branches both append memory)"
+        )
+
     return suggestions
 
 

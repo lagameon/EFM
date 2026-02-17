@@ -943,7 +943,24 @@ If you open Claude Code from a directory that isn't inside a git repository (e.g
 
 **Files that SHOULD be committed:** `events.jsonl`, `config.json`, `SCHEMA.md`, `.memory/lib/`, `.memory/hooks/`, `.memory/scripts/`, `.memory/tests/`.
 
-### 11. Can I use this without Claude Code CLI?
+### 11. Git merge conflicts in `events.jsonl`?
+
+**Prevention:** Add to your `.gitattributes`:
+```
+.memory/events.jsonl merge=union
+```
+This tells git to keep both sides' lines on merge (no conflict markers). EFM handles dedup automatically.
+
+**Recovery:** If you already have merge conflicts (or duplicate entries after merge), run `/memory-repair`:
+1. It removes git conflict markers (`<<<<<<<`, `=======`, `>>>>>>>`)
+2. Deduplicates entries by ID (newest `created_at` wins)
+3. Sorts entries chronologically
+4. Reports orphan sources (entries referencing deleted files)
+5. Creates a `.bak` backup before modifying
+
+Use `--dry-run` to preview without changes: `python3 .memory/scripts/repair_cli.py --dry-run`
+
+### 12. Can I use this without Claude Code CLI?
 
 The memory format (JSONL + SCHEMA.md) is tool-agnostic. The `.claude/commands/` files are specific to Claude Code CLI but the principles apply anywhere. The Python library modules can be used independently.
 
@@ -997,5 +1014,5 @@ MIT — see [LICENSE](LICENSE).
 | Schema | 1.1 |
 | Config | 1.5 |
 | EFM Version | 3.2.0 |
-| Commands | 1.3 (10 slash commands) |
-| V3 Engine | M11 (938 tests) |
+| Commands | 1.4 (11 slash commands) |
+| V3 Engine | M12 (938+ tests) |

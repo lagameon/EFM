@@ -73,6 +73,7 @@ class StartupReport:
     stale_entries: int = 0
     source_warnings: int = 0
     total_entries: int = 0
+    merge_markers: int = 0               # git conflict markers in events.jsonl
     active_session: bool = False
     active_session_task: str = ""
     active_session_phases: str = ""       # e.g., "1/3 done"
@@ -587,6 +588,15 @@ def _check_session_recovery(report: StartupReport, project_root: Path, config: d
             logger.warning("Session recovery check failed: %s", e)
 
 
+def _check_merge_markers(report: StartupReport, events_path: Path) -> None:
+    """Fast check for git merge conflict markers in events.jsonl."""
+    try:
+        from .repair import detect_merge_markers
+        report.merge_markers = detect_merge_markers(events_path)
+    except Exception as e:
+        logger.warning("Merge marker check failed: %s", e)
+
+
 def check_startup(
     events_path: Path,
     drafts_dir: Path,
@@ -601,7 +611,8 @@ def check_startup(
     2. Count stale entries (>threshold days)
     3. Spot-check source file existence on a sample of entries
     4. Detect active working memory session (session recovery)
-    5. Format startup hint string
+    5. Detect git merge conflict markers in events.jsonl
+    6. Format startup hint string
     """
     report = StartupReport()
     start_time = time.monotonic()
@@ -613,6 +624,7 @@ def check_startup(
     _check_version(report, config)
     _check_staleness_and_sources(report, active_entries, project_root, config)
     _check_session_recovery(report, project_root, config)
+    _check_merge_markers(report, events_path)
     report.hint = _format_hint(report, events_path.parent)
     report.duration_ms = (time.monotonic() - start_time) * 1000
     return report
@@ -631,6 +643,11 @@ def _format_hint(report: StartupReport, memory_dir: Optional[Path] = None) -> st
                 if info.get("status") == "failed"
             ]
             parts.append(f"pipeline: last run had {len(failed_names)} failures ({', '.join(failed_names)})")
+
+    if report.merge_markers > 0:
+        parts.append(
+            f"⚠️ {report.merge_markers} git merge conflict markers in events.jsonl — run /memory-repair"
+        )
 
     if report.active_session:
         task_preview = report.active_session_task[:50]

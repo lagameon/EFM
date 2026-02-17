@@ -4,6 +4,36 @@ All notable changes to EFM (Evidence-First Memory for Claude Code) will be docum
 
 ---
 
+## 2026-02-17 — V3.2 Phase 6: Git Merge Safety (`/memory-repair`)
+
+### New: Post-merge repair command for `events.jsonl`
+
+When multiple branches append to `events.jsonl`, git merges can introduce conflict markers, duplicate entries, and orphan source references. The new `/memory-repair` command fixes all of these in one pass.
+
+**New files (3):**
+- `.memory/lib/repair.py` — Core repair logic: merge marker removal, ID-based dedup (newest `created_at` wins, file position tiebreak), chronological sort, orphan source detection, atomic rewrite with backup
+- `.memory/scripts/repair_cli.py` — CLI entry point (`--dry-run`, `--no-backup`)
+- `.claude/commands/memory-repair.md` — `/memory-repair` slash command (dry-run → confirm → repair → report)
+
+**Modified files (3):**
+- `.memory/lib/auto_sync.py` — Startup health check now detects merge conflict markers in `events.jsonl` and warns with `/memory-repair` suggestion
+- `.memory/lib/init.py` — `scan_project()` now suggests `.gitattributes merge=union` for `events.jsonl` (prevents conflict markers on merge)
+- `README.md` — New FAQ #11 (git merge conflicts) and version bump
+
+**New tests:**
+- `.memory/tests/test_repair.py` — 25+ tests covering merge marker detection, raw line parsing, newest-wins dedup, orphan source checks, integration (repair + backup + dry-run + sort), and startup hint integration
+
+**Key design decisions:**
+| Decision | Choice | Rationale |
+|----------|--------|-----------|
+| Conflict strategy | Remove marker lines, keep all valid JSON | Markers aren't valid JSON; both sides' entries are valuable |
+| Dedup strategy | Newest `created_at` wins | More deterministic than file position after merge |
+| Tiebreak | Later file position wins | Consistent with append-only latest-wins semantics |
+| Orphan sources | Report only, don't delete | Entries may still be valuable; user decides |
+| Prevention | `.gitattributes merge=union` | Git keeps both sides' lines without conflict markers |
+
+---
+
 ## 2026-02-15 — V3.2 Phase 5: Hook Safety for Non-Git Directories
 
 ### Fix: Stop hook infinite loop in non-git subdirectories
