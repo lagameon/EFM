@@ -528,6 +528,8 @@ class TestScanProject(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             (Path(tmp) / ".gitignore").write_text(
                 ".memory/working/\nvectors.db\n"
+                ".memory/archive/\n.memory/drafts/\n"
+                ".claude/rules/ef-memory/\n"
             )
             suggestions = scan_project(Path(tmp))
             # Should NOT suggest gitignore additions

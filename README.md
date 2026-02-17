@@ -922,7 +922,28 @@ Hard entries are automatically injected into `.claude/rules/ef-memory/` (M3) so 
 
 If you open Claude Code from a directory that isn't inside a git repository (e.g. a subfolder of a mono-repo that isn't itself a git root), the hooks will fail silently and skip. Before V3.2-P5 this caused `git rev-parse` to write to stderr, and the Stop hook could enter an infinite loop. **Fix:** run `/memory-init` to regenerate hooks with the safe prefix, or update to V3.2-P5+.
 
-### 10. Can I use this without Claude Code CLI?
+### 10. What should `.gitignore` include for EFM?
+
+**Critical:** When deploying EFM to a new project, add these entries to its `.gitignore`:
+
+```gitignore
+# EF Memory (derived artifacts, session-scoped)
+.memory/archive/
+.memory/vectors.db
+.memory/drafts/*.json
+.memory/working/
+.claude/rules/ef-memory/
+```
+
+**Why this matters:**
+- `vectors.db` is a SQLite file. Git cannot merge binary files — switching branches corrupts it, and merge conflicts are unresolvable. If already tracked, run `git rm --cached .memory/vectors.db` to untrack it (the file stays on disk and is auto-rebuilt by `/memory-search`).
+- `drafts/*.json` and `working/` are session-scoped transient files that should not persist across branches.
+- `archive/` is user-specific compaction history, regenerable from `events.jsonl`.
+- `rules/ef-memory/` is derived from `events.jsonl` entries and auto-regenerated.
+
+**Files that SHOULD be committed:** `events.jsonl`, `config.json`, `SCHEMA.md`, `.memory/lib/`, `.memory/hooks/`, `.memory/scripts/`, `.memory/tests/`.
+
+### 11. Can I use this without Claude Code CLI?
 
 The memory format (JSONL + SCHEMA.md) is tool-agnostic. The `.claude/commands/` files are specific to Claude Code CLI but the principles apply anywhere. The Python library modules can be used independently.
 

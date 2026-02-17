@@ -384,22 +384,36 @@ def scan_project(project_root: Path) -> List[str]:
                 f"Found {path.relative_to(project_root)} — high-value import target"
             )
 
-    # Check .gitignore for memory artifacts
+    # Check .gitignore for memory artifacts.
+    # These are derived/session-scoped files that MUST NOT be committed:
+    #   - vectors.db: SQLite binary, corrupts on branch switch, unresolvable merge
+    #   - working/: session-scoped PWF files
+    #   - archive/: compacted history, regenerable
+    #   - drafts/*.json: review queue, transient
+    #   - .claude/rules/ef-memory/: auto-generated from events.jsonl
+    _required_ignores = {
+        ".memory/vectors.db": [".memory/vectors.db", "vectors.db"],
+        ".memory/working/": [".memory/working/"],
+        ".memory/archive/": [".memory/archive/"],
+        ".memory/drafts/*.json": [".memory/drafts/", "drafts/*.json"],
+        ".claude/rules/ef-memory/": [".claude/rules/ef-memory/"],
+    }
     gitignore = project_root / ".gitignore"
     if gitignore.exists():
         content = gitignore.read_text()
-        missing = []
-        if ".memory/working/" not in content:
-            missing.append(".memory/working/")
-        if ".memory/vectors.db" not in content and "vectors.db" not in content:
-            missing.append(".memory/vectors.db")
+        missing = [
+            pattern
+            for pattern, variants in _required_ignores.items()
+            if not any(v in content for v in variants)
+        ]
         if missing:
             suggestions.append(
-                f"Consider adding to .gitignore: {', '.join(missing)}"
+                f"⚠️ Add to .gitignore (prevents merge conflicts): {', '.join(missing)}"
             )
     else:
         suggestions.append(
-            "No .gitignore found — consider creating one with .memory/working/ and .memory/vectors.db"
+            "⚠️ No .gitignore found — create one with: "
+            + ", ".join(_required_ignores.keys())
         )
 
     return suggestions
