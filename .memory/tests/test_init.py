@@ -428,10 +428,12 @@ class TestMergeSettingsJson(unittest.TestCase):
                 for hook in group["hooks"]:
                     cmd = hook["command"]
                     if ".memory/hooks/" in cmd:
+                        # Worktree-safe: must use --git-common-dir (not
+                        # --show-toplevel which returns the worktree path)
                         self.assertIn(
-                            'git rev-parse --show-toplevel',
+                            'git rev-parse --path-format=absolute --git-common-dir',
                             cmd,
-                            f"{event_name} hook missing cd-to-root prefix",
+                            f"{event_name} hook missing worktree-safe cd-to-root prefix",
                         )
                         # Must suppress stderr and exit gracefully for non-git dirs
                         self.assertIn(

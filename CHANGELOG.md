@@ -4,6 +4,34 @@ All notable changes to EFM (Evidence-First Memory for Claude Code) will be docum
 
 ---
 
+## 2026-03-03 — V3.2 Phase 7: Worktree-Safe Hook Prefix
+
+### Fix: Hooks fail when Claude Code is opened from a git worktree
+
+**BUG: `--show-toplevel` returns the worktree path, not the main repo path**
+`git rev-parse --show-toplevel` in a worktree returns the worktree directory (e.g. `.claude/worktrees/vibrant-swartz/`), not the main repository root. This caused all hook scripts that reference `.memory/hooks/` to fail with "No such file or directory" because the worktree directory doesn't contain a `.memory/` tree.
+
+Root cause discovered while using Claude Code worktrees in the QTP project. EFM itself had the identical bug.
+
+**Fix:** Changed the hook command prefix in `generate_hooks_settings()` to:
+```
+_r="$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null)" || exit 0; _r="${_r%/.git}"; cd "$_r" && ...
+```
+- `--git-common-dir` always returns the main repo's `.git` path (not the worktree-specific subdir)
+- `--path-format=absolute` ensures an absolute path regardless of CWD
+- `${_r%/.git}` strips the trailing `/.git` using bash suffix removal (no sed — avoids false matches on paths containing `.github` directories)
+- Requires git 2.31+ (March 2021)
+
+All 5 hooks (SessionStart, PreToolUse:Edit/Write, PreToolUse:EnterPlanMode, Stop, PreCompact) updated.
+
+**Upgrade:** Run `/memory-init` to regenerate hooks with the worktree-safe prefix.
+
+**Modified files (2):**
+- `.memory/lib/init.py` — `generate_hooks_settings()` worktree-safe prefix (with explanatory comment)
+- `.memory/tests/test_init.py` — updated assertion to check for `--git-common-dir` instead of `--show-toplevel`
+
+---
+
 ## 2026-02-17 — V3.2 Phase 6: Git Merge Safety (`/memory-repair`)
 
 ### New: Post-merge repair command for `events.jsonl`

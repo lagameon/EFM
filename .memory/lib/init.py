@@ -213,7 +213,14 @@ def generate_hooks_settings() -> dict:
     # is editing files in a subdirectory like deployment/live_trading/).
     # The _root variable silently exits if not in a git repo, preventing
     # errors (and infinite Stop-hook loops) in non-git subdirectories.
-    _root = '_r="$(git rev-parse --show-toplevel 2>/dev/null)" || exit 0; cd "$_r" && '
+    #
+    # Worktree-safe: --path-format=absolute --git-common-dir always returns
+    # the main repo's .git path (not the worktree path), so hooks can find
+    # .memory/hooks/ even when Claude is opened from a git worktree.
+    # bash ${_r%/.git} strips exactly "/.git" at the end (no sed, no glob
+    # issues with paths that contain ".github" directories).
+    # Requires git 2.31+ (released 2021-03).
+    _root = '_r="$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null)" || exit 0; _r="${_r%/.git}"; cd "$_r" && '
     return {
         "SessionStart": [
             {
